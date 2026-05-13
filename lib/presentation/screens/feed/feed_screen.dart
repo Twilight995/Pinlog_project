@@ -533,160 +533,433 @@ class _PinDogamTab extends StatelessWidget {
     required this.totalCount,
   });
 
+  void _showDetail(
+    BuildContext context, {
+    required String emoji,
+    required String name,
+    required int count,
+    required bool unlocked,
+  }) {
+    showAppSheet<void>(
+      context,
+      builder: (_) => _PinDetailSheet(
+        emoji: emoji,
+        name: name,
+        count: count,
+        unlocked: unlocked,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final unlockedShapes = AppConstants.pinShapes
+        .where((s) => (pinCountByShape[s] ?? 0) > 0)
+        .toList();
+    final lockedShapes = AppConstants.pinShapes
+        .where((s) => (pinCountByShape[s] ?? 0) == 0)
+        .toList();
+
     return CustomScrollView(
       slivers: [
-        // ── 수집 현황 헤더 ──────────────────────────────────────────────────
+        // ── 수집 현황 카드 (칭호 카드와 동일 구조) ──────────────────────────
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-            child: Row(
-              children: [
-                Text(
-                  '$unlockedCount / $totalCount 수집',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: context.subLabelColor,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${(unlockedCount / totalCount * 100).round()}%',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: _PinCollectionCard(
+              unlockedCount: unlockedCount,
+              totalCount: totalCount,
             ),
           ),
         ),
-
-        // ── 전체 도감 컨테이너 (카드 하나로) ───────────────────────────────
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-            child: Container(
-              decoration: BoxDecoration(
-                color: context.cardBg,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+        if (unlockedShapes.isNotEmpty) ...[
+          _SectionHeader(label: '수집한 핀', count: unlockedShapes.length),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.88,
               ),
-              padding: const EdgeInsets.all(14),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 6,
-                  crossAxisSpacing: 6,
-                  childAspectRatio: 0.88,
-                ),
-                itemCount: AppConstants.pinShapes.length,
-                itemBuilder: (context, i) {
-                  final shape = AppConstants.pinShapes[i];
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  final shape = unlockedShapes[i];
                   final count = pinCountByShape[shape] ?? 0;
-                  final unlocked = count > 0;
                   final emoji = AppConstants.pinShapeEmojis[shape] ?? '📍';
                   final name = AppConstants.pinShapeNames[shape] ?? shape;
-                  return _PinCategoryItem(
+                  return _PinCategoryCard(
                     emoji: emoji,
                     name: name,
                     count: count,
-                    unlocked: unlocked,
+                    unlocked: true,
+                    onTap: () => _showDetail(
+                      context,
+                      emoji: emoji,
+                      name: name,
+                      count: count,
+                      unlocked: true,
+                    ),
                   );
                 },
+                childCount: unlockedShapes.length,
               ),
             ),
           ),
-        ),
+        ],
+        if (lockedShapes.isNotEmpty) ...[
+          _SectionHeader(label: '미수집 핀', count: lockedShapes.length),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.88,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  final shape = lockedShapes[i];
+                  final emoji = AppConstants.pinShapeEmojis[shape] ?? '📍';
+                  final name = AppConstants.pinShapeNames[shape] ?? shape;
+                  return _PinCategoryCard(
+                    emoji: emoji,
+                    name: name,
+                    count: 0,
+                    unlocked: false,
+                    onTap: () => _showDetail(
+                      context,
+                      emoji: emoji,
+                      name: name,
+                      count: 0,
+                      unlocked: false,
+                    ),
+                  );
+                },
+                childCount: lockedShapes.length,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
 }
 
-// ─── 핀 카테고리 아이템 (컨테이너 없이, 전체 그리드가 하나의 카드) ──────────
+// ─── 핀 수집 현황 카드 (칭호 카드와 동일한 그라데이션 헤더 카드) ──────────────
 
-class _PinCategoryItem extends StatelessWidget {
+class _PinCollectionCard extends StatelessWidget {
+  final int unlockedCount;
+  final int totalCount;
+
+  const _PinCollectionCard({
+    required this.unlockedCount,
+    required this.totalCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = totalCount > 0 ? unlockedCount / totalCount : 0.0;
+    final percent = (progress * 100).round();
+    final remaining = totalCount - unlockedCount;
+    final color = AppColors.primary;
+
+    final subtitle = unlockedCount == 0
+        ? '아직 수집한 핀이 없어요. 첫 핀을 심어볼까요?'
+        : remaining == 0
+            ? '모든 핀을 수집했어요. 진정한 핀 마스터!'
+            : '$totalCount종 중 $unlockedCount종을 모았어요';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color.withValues(alpha: 0.15),
+            color.withValues(alpha: 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              '수집 현황',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$unlockedCount',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              Text(
+                ' / $totalCount종',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: color.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 13, color: AppColors.grey),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                remaining > 0 ? '남은 핀 $remaining종' : '컴플리트',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.grey,
+                ),
+              ),
+              Text(
+                '$percent%',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: context.progressBg,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 핀 카테고리 카드 (뱃지 카드와 동일한 디자인) ─────────────────────────────
+
+class _PinCategoryCard extends StatelessWidget {
+  final String emoji;
+  final String name;
+  final int count;
+  final bool unlocked;
+  final VoidCallback onTap;
+
+  const _PinCategoryCard({
+    required this.emoji,
+    required this.name,
+    required this.count,
+    required this.unlocked,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: unlocked ? 1.0 : 0.45,
+        child: Container(
+          decoration: BoxDecoration(
+            color: context.cardBg,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: unlocked
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: unlocked
+                      ? AppColors.primary.withValues(alpha: 0.12)
+                      : context.emptyStateBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: unlocked
+                      ? Text(emoji, style: const TextStyle(fontSize: 26))
+                      : const Icon(
+                          Icons.lock_rounded,
+                          size: 26,
+                          color: AppColors.grey,
+                        ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  name,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: unlocked ? context.labelColor : AppColors.grey,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                unlocked ? '$count곳' : '미수집',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: unlocked ? AppColors.primary : AppColors.greyPale,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 핀 상세 시트 (뱃지 상세 시트와 동일 디자인) ──────────────────────────────
+
+class _PinDetailSheet extends StatelessWidget {
   final String emoji;
   final String name;
   final int count;
   final bool unlocked;
 
-  const _PinCategoryItem({
+  const _PinDetailSheet({
     required this.emoji,
     required this.name,
     required this.count,
     required this.unlocked,
   });
 
-  static const _ringColor = Color(0xFFFFCC00);
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 62,
-          height: 62,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: unlocked
-                ? context.isDark ? const Color(0xFF2D2D2D) : Colors.white
-                : const Color(0xFF3A3A3A),
-            border: Border.all(
-              color: unlocked ? _ringColor : const Color(0xFF555555),
-              width: unlocked ? 2.5 : 1.5,
+    final color = AppColors.primary;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: context.cardBg,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: unlocked
+                  ? color.withValues(alpha: 0.12)
+                  : context.emptyStateBg,
+              shape: BoxShape.circle,
             ),
-            boxShadow: unlocked
-                ? [BoxShadow(color: _ringColor.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))]
-                : [],
+            child: Center(
+              child: unlocked
+                  ? Text(emoji, style: const TextStyle(fontSize: 40))
+                  : const Icon(
+                      Icons.lock_rounded,
+                      size: 40,
+                      color: AppColors.grey,
+                    ),
+            ),
           ),
-          child: Center(
-            child: unlocked
-                ? Text(emoji, style: const TextStyle(fontSize: 28))
-                : const Icon(Icons.lock_rounded, size: 24, color: Color(0xFFFFCC00)),
+          const SizedBox(height: 16),
+          Text(
+            name,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: context.labelColor,
+            ),
           ),
-        ),
-        const SizedBox(height: 7),
-        Text(
-          name,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: unlocked ? context.labelColor : AppColors.grey,
+          const SizedBox(height: 6),
+          Text(
+            unlocked
+                ? '$name 카테고리를 $count곳 기록했어요'
+                : '아직 $name 카테고리를 기록하지 않았어요',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 14, color: AppColors.grey),
           ),
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          unlocked ? '$count곳' : '미수집',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-            color: unlocked ? AppColors.primary : AppColors.greyPale,
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: unlocked
+                  ? color.withValues(alpha: 0.08)
+                  : context.emptyStateBg,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  unlocked
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  size: 16,
+                  color: unlocked ? color : AppColors.grey,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  unlocked ? '수집 완료' : '아직 수집하지 못했어요',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: unlocked ? color : AppColors.grey,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 }

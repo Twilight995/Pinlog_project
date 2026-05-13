@@ -89,12 +89,13 @@ class _FloatingNav extends StatelessWidget {
     final bottomInset = MediaQuery.of(context).padding.bottom;
     // 하단 safe area에 딱 붙이는 기준값
     final bottomPad = bottomInset + 5.0;
-    // 블러 스트립 전체 높이 = pill 높이 + 위 여백 + 아래 여백
-    final stripHeight = bottomPad + 72.0 + 0.0;
+    // 블러 스트립 전체 높이 = pill 높이 + 위 여백(+ 버튼 튀어나오는 공간) + 아래 여백
+    final stripHeight = bottomPad + 72.0 + 20.0;
 
     return SizedBox(
       height: stripHeight,
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           // ── 하단 그라디언트 페이드 (경계 없이 자연스럽게) ──────────
           Positioned.fill(
@@ -157,7 +158,7 @@ class _FloatingNav extends StatelessWidget {
                         isActive: activeTab == 1,
                         onTap: () => onTabChanged(1),
                       ),
-                      _CreateButton(onTap: onCreateTap),
+                      const SizedBox(width: 56),
                       _NavItem(
                         icon: Icons.bolt_outlined,
                         activeIcon: Icons.bolt,
@@ -176,6 +177,15 @@ class _FloatingNav extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
+          ),
+          // ── + 버튼 (ClipRRect 바깥, 위로 튀어나오게) ──────────────
+          Positioned(
+            bottom: bottomPad + 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _CreateButton(onTap: onCreateTap),
             ),
           ),
         ],
@@ -313,25 +323,22 @@ class _CreateButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Transform.translate(
-        offset: const Offset(0, -12),
-        child: Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C1C1E),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.add, color: Colors.white, size: 26),
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C1C1E),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
+        child: const Icon(Icons.add, color: Colors.white, size: 26),
       ),
     );
   }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import 'core/theme/app_theme.dart';
 import 'data/models/pin_model.dart';
@@ -9,11 +8,8 @@ import 'data/repositories/pin_repository.dart';
 import 'data/repositories/profile_repository.dart';
 import 'presentation/screens/main_shell.dart';
 
-const _kMapboxToken = String.fromEnvironment('MAPBOX_TOKEN');
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MapboxOptions.setAccessToken(_kMapboxToken);
   await Hive.initFlutter();
   await PinRepository.init();
   await ProfileRepository.init();
