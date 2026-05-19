@@ -8,8 +8,11 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../application/providers/pin_provider.dart';
 import '../../../application/providers/profile_provider.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
+import '../../widgets/cosmic/blob.dart';
+import '../../widgets/cosmic/cosmic_background.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Screen
@@ -31,112 +34,87 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final pins    = ref.watch(pinsProvider);
     final profile = ref.watch(profileProvider);
 
+    // 수집 진행도: 12종 카테고리 중 몇 종 모았는지
+    final totalCategories = AppConstants.pinShapes.length;
+    final collectedCategories = AppConstants.pinShapes
+        .where((shape) => pins.any((p) => p.pinShape == shape))
+        .length;
+
     return Scaffold(
-      backgroundColor: context.bgColor,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ── App bar ──────────────────────────────────────────────────────────
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: 100,
-            backgroundColor: context.bgColor,
-            surfaceTintColor: Colors.transparent,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.fromLTRB(20, 0, 0, 16),
-              title: Text(
-                '프로필',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: context.labelColor,
-                ),
-              ),
-            ),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 16, top: 12, bottom: 12),
-                child: GestureDetector(
-                  onTap: () => setState(() => _isEditing = !_isEditing),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _isEditing
-                          ? AppColors.primary.withValues(alpha: 0.15)
-                          : AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _isEditing
-                            ? AppColors.primary.withValues(alpha: 0.5)
-                            : AppColors.primary.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _isEditing ? Icons.check_rounded : Icons.edit_outlined,
-                          size: 14,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _isEditing ? '완료' : '편집',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
+      backgroundColor: Colors.black,
+      body: Stack(children: [
+        const CosmicBackground(),
+        SafeArea(
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              // ── 컴팩트 헤더 (아바타 + Welcome + 편집 버튼) ─────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  child: _CompactHeader(
+                    nickname: profile.nickname,
+                    photoPath: profile.photoPath,
+                    isEditing: _isEditing,
+                    onPhotoTap: _isEditing ? _pickPhoto : null,
+                    onEditTap: () => setState(() => _isEditing = !_isEditing),
                   ),
                 ),
               ),
+
+              // ── 진행률 카드 (다크 글래스 코스믹) ────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: _ProgressGlassCard(
+                    collected: collectedCategories,
+                    total: totalCategories,
+                  ),
+                ),
+              ),
+
+              // ── 프레임 컬렉션 (편집 모드에서만) ──────────────────────────────
+              if (_isEditing)
+                SliverToBoxAdapter(
+                  child: _FrameSection(
+                    currentFrameId: profile.borderStyle,
+                    pinCount: pins.length,
+                    onEquip: (id) => ref
+                        .read(profileProvider.notifier)
+                        .update(borderStyle: id),
+                  ),
+                ),
+
+              // ── 닉네임 편집 버튼 (편집 모드에서만) ───────────────────────────
+              if (_isEditing)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+                    child: _EditNameButton(
+                      nickname: profile.nickname,
+                      subtitle: profile.subtitle,
+                      onTap: () => _showEditSheet(context),
+                    ),
+                  ),
+                ),
+
+              // ── 설정 ────────────────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+                  child: _SettingsSection(
+                    notifEnabled: _notifEnabled,
+                    onNotifChanged: (v) =>
+                        setState(() => _notifEnabled = v),
+                  ),
+                ),
+              ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 120)),
             ],
           ),
-
-          // ── Profile card ──────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: _ProfileCard(
-                nickname: profile.nickname,
-                subtitle: profile.subtitle,
-                photoPath: profile.photoPath,
-                frameId: profile.borderStyle,
-                isEditing: _isEditing,
-                onPhotoTap: _isEditing ? _pickPhoto : null,
-                onNameTap: _isEditing ? () => _showEditSheet(context) : null,
-              ),
-            ),
-          ),
-
-          // ── Frame collection (편집 모드에서만 표시) ──────────────────────────
-          if (_isEditing)
-            SliverToBoxAdapter(
-              child: _FrameSection(
-                currentFrameId: profile.borderStyle,
-                pinCount: pins.length,
-                onEquip: (id) => ref.read(profileProvider.notifier).update(borderStyle: id),
-              ),
-            ),
-
-          // ── Settings ──────────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(16, _isEditing ? 28 : 28, 16, 0),
-              child: _SettingsSection(
-                notifEnabled: _notifEnabled,
-                onNotifChanged: (v) => setState(() => _notifEnabled = v),
-              ),
-            ),
-          ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 120)),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 
@@ -532,127 +510,324 @@ class _FramePainter extends CustomPainter {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Profile Card  — avatar + frame displayed together
+// 컴팩트 헤더 — 작은 아바타 + Welcome back + 닉네임 + 편집 버튼
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _ProfileCard extends StatelessWidget {
+class _CompactHeader extends StatelessWidget {
   final String nickname;
-  final String subtitle;
   final String? photoPath;
-  final String frameId;
   final bool isEditing;
   final VoidCallback? onPhotoTap;
-  final VoidCallback? onNameTap;
+  final VoidCallback onEditTap;
 
-  const _ProfileCard({
+  const _CompactHeader({
     required this.nickname,
-    required this.subtitle,
     required this.photoPath,
-    required this.frameId,
     required this.isEditing,
-    this.onPhotoTap,
-    this.onNameTap,
+    required this.onPhotoTap,
+    required this.onEditTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 28),
-      decoration: BoxDecoration(
-        color: context.cardBg,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 16, offset: const Offset(0, 4)),
-        ],
-      ),
-      child: Column(
-        children: [
-          // ── 프로필 사진 ──────────────────────────────────────────────────────
-          GestureDetector(
-            onTap: onPhotoTap,
-            child: Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                SizedBox(
-                  width: 120,
-                  height: 120,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: _FramePainter(
-                            frameId: frameId,
-                            colors: _frameById(frameId).colors,
-                          ),
-                        ),
+    return Row(
+      children: [
+        // 작은 아바타 (52x52)
+        GestureDetector(
+          onTap: onPhotoTap,
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  TabTheme.profile.bgEnd,
+                  TabTheme.profile.accent,
+                ],
+              ),
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: ClipOval(
+              child: photoPath != null
+                  ? Image.file(File(photoPath!), fit: BoxFit.cover)
+                  : const Center(
+                      child: Icon(
+                        Icons.person_rounded,
+                        size: 26,
+                        color: Colors.white,
                       ),
-                      Center(
-                        child: SizedBox(
-                          width: 89,
-                          height: 89,
-                          child: ClipOval(
-                            child: photoPath != null
-                                ? Image.file(File(photoPath!), fit: BoxFit.cover)
-                                : Container(
-                                    color: AppColors.primary.withValues(alpha: 0.12),
-                                    child: const Icon(Icons.person_rounded, size: 44, color: AppColors.primary),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // 카메라 배지 — 편집 모드에서만 표시
-                if (isEditing)
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: context.bgColor, width: 2),
-                      boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.4), blurRadius: 8)],
                     ),
-                    child: const Icon(Icons.camera_alt_rounded, size: 14, color: Colors.white),
-                  ),
-              ],
             ),
           ),
-          const SizedBox(height: 16),
-          // ── 이름/소개 (편집 모드에서 탭 가능) ────────────────────────────────
-          GestureDetector(
-            onTap: onNameTap,
-            child: Column(
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      nickname,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: context.labelColor,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    if (isEditing) ...[
-                      const SizedBox(width: 6),
-                      Icon(Icons.edit_rounded, size: 14, color: AppColors.primary),
-                    ],
+        ),
+        const SizedBox(width: 12),
+        // Welcome + 닉네임
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Welcome back',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textMuted,
+                  fontFamily: AppTokens.fontBody,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                nickname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  fontFamily: AppTokens.fontDisplay,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 원형 편집 버튼
+        GestureDetector(
+          onTap: onEditTap,
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: AppColors.bgControlPill,
+              shape: BoxShape.circle,
+              border: Border.all(color: TabTheme.profile.accent, width: 1),
+            ),
+            child: Icon(
+              isEditing ? Icons.check_rounded : Icons.edit_outlined,
+              size: 18,
+              color: TabTheme.profile.light,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 진행률 글래스 카드 — 다크 코스믹 + 블루 글로우 + 원형 진행률
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _ProgressGlassCard extends StatelessWidget {
+  final int collected;
+  final int total;
+
+  const _ProgressGlassCard({required this.collected, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = total > 0 ? collected / total : 0.0;
+    final percent = (progress * 100).round();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppTokens.radiusCard),
+      child: Stack(
+        children: [
+          // 다크 코스믹 베이스
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.bgCosmicCardStart,
+                    AppColors.bgCosmicCardEnd,
                   ],
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 13, color: context.subLabelColor, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ),
+          // 오른쪽 부드러운 블루 글로우 클러스터
+          Positioned(
+            right: -80,
+            top: -80,
+            child: Blob(
+              size: 280,
+              color: TabTheme.profile.accent,
+              opacity: 0.45,
+            ),
+          ),
+          Positioned(
+            right: -30,
+            top: -20,
+            child: Blob(
+              size: 180,
+              color: TabTheme.profile.light,
+              opacity: 0.55,
+            ),
+          ),
+          // 작은 흰 별 3개
+          const Positioned(
+              right: 60, top: 18, child: _Star(size: 3, opacity: 0.9)),
+          const Positioned(
+              right: 30, top: 60, child: _Star(size: 2, opacity: 0.7)),
+          const Positioned(
+              right: 90, top: 78, child: _Star(size: 2, opacity: 0.6)),
+          // 컨텐츠
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                // 원형 진행률
+                SizedBox(
+                  width: 74,
+                  height: 74,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 74,
+                        height: 74,
+                        child: CircularProgressIndicator(
+                          value: progress.clamp(0.0, 1.0),
+                          strokeWidth: 5,
+                          backgroundColor: AppOverlays.w08,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            TabTheme.profile.light,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '$percent%',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          fontFamily: AppTokens.fontDisplay,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // 텍스트
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        '잘 채워가고 있어요!',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                          fontFamily: AppTokens.fontDisplay,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$total종 중 $collected종 수집했어요 ✨',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textMuted,
+                          fontFamily: AppTokens.fontBody,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _Star extends StatelessWidget {
+  final double size;
+  final double opacity;
+  const _Star({required this.size, required this.opacity});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withValues(alpha: opacity),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 닉네임 편집 버튼 (편집 모드에서만)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _EditNameButton extends StatelessWidget {
+  final String nickname;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _EditNameButton({
+    required this.nickname,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppOverlays.w08,
+          borderRadius: BorderRadius.circular(AppTokens.radiusCard),
+          border: Border.all(color: AppOverlays.w12),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    nickname,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                      fontFamily: AppTokens.fontDisplay,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                      fontFamily: AppTokens.fontBody,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.edit_rounded,
+              size: 18,
+              color: TabTheme.profile.light,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -685,20 +860,33 @@ class _FrameSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Text(
+                const Text(
                   '프레임 컬렉션',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: context.labelColor),
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    fontFamily: AppTokens.fontDisplay,
+                  ),
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
+                    color: AppOverlays.w08,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '장착 중: ${current.name}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: TabTheme.profile.light,
+                      fontFamily: AppTokens.fontBody,
+                    ),
                   ),
                 ),
               ],
@@ -746,7 +934,7 @@ class _FrameItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const frameColors = [AppColors.grey, Color(0xFFBBBBBB)];
+    const frameColors = [AppColors.textMuted, Color(0xFFBBBBBB)];
     final displayColors = isUnlocked ? frame.colors : frameColors;
 
     return GestureDetector(
@@ -762,8 +950,8 @@ class _FrameItem extends StatelessWidget {
             decoration: isEquipped
                 ? BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.primary, width: 2.5),
-                    boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 10)],
+                    border: Border.all(color: TabTheme.profile.accent, width: 2.5),
+                    boxShadow: [BoxShadow(color: TabTheme.profile.accent.withValues(alpha: 0.3), blurRadius: 10)],
                   )
                 : null,
             child: Stack(
@@ -782,12 +970,12 @@ class _FrameItem extends StatelessWidget {
                     child: ClipOval(
                       child: Container(
                         color: isUnlocked
-                            ? AppColors.primary.withValues(alpha: 0.08)
-                            : const Color(0xFFEEEEEE),
+                            ? AppColors.bgControlPill
+                            : AppColors.bgLockedStart,
                         child: Icon(
                           Icons.person_rounded,
                           size: 30,
-                          color: isUnlocked ? AppColors.primary.withValues(alpha: 0.45) : AppColors.grey,
+                          color: isUnlocked ? TabTheme.profile.light : AppColors.textMuted,
                         ),
                       ),
                     ),
@@ -821,7 +1009,7 @@ class _FrameItem extends StatelessWidget {
                     child: Container(
                       width: 18,
                       height: 18,
-                      decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                      decoration: BoxDecoration(color: TabTheme.profile.accent, shape: BoxShape.circle),
                       child: const Icon(Icons.check_rounded, size: 12, color: Colors.white),
                     ),
                   ),
@@ -834,7 +1022,8 @@ class _FrameItem extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isUnlocked ? context.labelColor : AppColors.grey,
+              color: isUnlocked ? AppColors.textPrimary : AppColors.textMuted,
+              fontFamily: AppTokens.fontBody,
             ),
           ),
         ],
@@ -1006,42 +1195,51 @@ class _SettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('설정',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: context.labelColor)),
+        const Text(
+          '설정',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+            fontFamily: AppTokens.fontDisplay,
+          ),
+        ),
         const SizedBox(height: 12),
         Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
-            color: context.cardBg,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.bgCosmicCardStart,
+                AppColors.bgCosmicCardEnd,
+              ],
+            ),
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(
             children: [
               _ToggleRow(
                 icon: Icons.notifications_outlined,
-                iconColor: const Color(0xFFFF9500),
                 label: '알림',
                 subtitle: '새 공유 핀 및 챌린지 알림',
                 value: notifEnabled,
                 onChanged: onNotifChanged,
-                isFirst: true,
               ),
-              _RowSeparator(),
+              const _RowSeparator(),
               _TapRow(
                 icon: Icons.share_outlined,
-                iconColor: AppColors.blue,
                 label: '공유 지도',
                 subtitle: '친구와 지도 공유하기',
                 onTap: () {},
               ),
-              _RowSeparator(),
+              const _RowSeparator(),
               _TapRow(
                 icon: Icons.info_outline,
-                iconColor: AppColors.grey,
                 label: '앱 버전',
                 subtitle: '1.0.0',
                 onTap: null,
-                isLast: true,
               ),
             ],
           ),
@@ -1053,41 +1251,57 @@ class _SettingsSection extends StatelessWidget {
 
 class _ToggleRow extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
   final String label;
   final String subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
-  final bool isFirst;
 
   const _ToggleRow({
     required this.icon,
-    required this.iconColor,
     required this.label,
     required this.subtitle,
     required this.value,
     required this.onChanged,
-    this.isFirst = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, isFirst ? 6 : 0, 8, 0),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          _IconBox(icon: icon, color: iconColor),
+          _CircleIcon(icon: icon),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.labelColor)),
-                Text(subtitle, style: TextStyle(fontSize: 12, color: context.subLabelColor)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
               ],
             ),
           ),
-          Switch.adaptive(value: value, onChanged: onChanged, activeTrackColor: AppColors.primary),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeTrackColor: TabTheme.profile.accent,
+          ),
         ],
       ),
     );
@@ -1096,19 +1310,15 @@ class _ToggleRow extends StatelessWidget {
 
 class _TapRow extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
   final String label;
   final String subtitle;
   final VoidCallback? onTap;
-  final bool isLast;
 
   const _TapRow({
     required this.icon,
-    required this.iconColor,
     required this.label,
     required this.subtitle,
     required this.onTap,
-    this.isLast = false,
   });
 
   @override
@@ -1117,21 +1327,42 @@ class _TapRow extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(16, 12, 16, isLast ? 12 : 0),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            _IconBox(icon: icon, color: iconColor),
+            _CircleIcon(icon: icon),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.labelColor)),
-                  Text(subtitle, style: TextStyle(fontSize: 12, color: context.subLabelColor)),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      fontFamily: AppTokens.fontBody,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                      fontFamily: AppTokens.fontBody,
+                    ),
+                  ),
                 ],
               ),
             ),
-            if (onTap != null) Icon(Icons.chevron_right, size: 18, color: context.subLabelColor),
+            if (onTap != null)
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppOverlays.w50,
+              ),
           ],
         ),
       ),
@@ -1139,28 +1370,36 @@ class _TapRow extends StatelessWidget {
   }
 }
 
-class _IconBox extends StatelessWidget {
+class _CircleIcon extends StatelessWidget {
   final IconData icon;
-  final Color color;
 
-  const _IconBox({required this.icon, required this.color});
+  const _CircleIcon({required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 34, height: 34,
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-      child: Icon(icon, size: 18, color: color),
+      width: 36,
+      height: 36,
+      decoration: const BoxDecoration(
+        color: AppColors.bgControlPill,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        icon,
+        size: 18,
+        color: TabTheme.profile.light,
+      ),
     );
   }
 }
 
 class _RowSeparator extends StatelessWidget {
+  const _RowSeparator();
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 62),
-      child: Container(height: 1, color: context.separatorColor),
+      padding: const EdgeInsets.only(left: 48),
+      child: Container(height: 1, color: AppOverlays.w06),
     );
   }
 }

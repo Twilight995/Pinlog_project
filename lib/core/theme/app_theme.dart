@@ -25,6 +25,142 @@ class AppColors {
 
   static const glassWhite = Color(0xA6FFFFFF);
   static const glassBorder = Color(0x80FFFFFF);
+
+  // ── 텍스트 (디자인 토큰) ──────────────────────────────────────────────────
+  static const textPrimary = Color(0xFFFFFFFF);
+  static const textSecondary = Color(0xFFC8C1E0);
+  static const textMuted = Color(0xFF7C6FAB);
+  static const textOnPastel = Color(0xFF1A0F3D);
+
+  // ── 다크 배경 변형 (디자인 토큰) ────────────────────────────────────────
+  static const bgDeepBlack = Color(0xFF0A0612);
+  static const bgWarmDark = Color(0xFF16121C); // 네비 / 시트
+  static const bgControlPill = Color(0xFF1A1233); // 컨트롤 알약
+  static const bgCosmicCardStart = Color(0xFF15101E); // 코스믹 카드 그라디언트 시작
+  static const bgCosmicCardEnd = Color(0xFF0A0612);
+  static const bgLockedStart = Color(0xFF1B181F); // 잠긴 카드 그라디언트
+  static const bgLockedEnd = Color(0xFF0D0B11);
+
+  // ── 파스텔 (디자인 토큰) ────────────────────────────────────────────────
+  static const pastelLavender = Color(0xFFC7BFFF);
+  static const pastelYellow = Color(0xFFFFE9A8);
+  static const pastelMint = Color(0xFFBFEFE4);
+  static const pastelPink = Color(0xFFF5C9E0);
+  static const pastelPeach = Color(0xFFFFD3B6);
+
+  // ── 따스한 호박 팔레트 (성공 모먼트) ─────────────────────────────────────
+  static const warmCream = Color(0xFFFFFAF0);
+  static const warmAmber = Color(0xFFFFB347);
+  static const warmHoney = Color(0xFFFFC857);
+  static const warmGold = Color(0xFFFFD888);
+  static const warmBrown = Color(0xFF7A4A1A);
+}
+
+/// 글래스 오버레이 — 다크 배경 위에 깔리는 흰 반투명
+class AppOverlays {
+  static const w04 = Color(0x0AFFFFFF); // 4%
+  static const w06 = Color(0x0FFFFFFF); // 6%
+  static const w08 = Color(0x14FFFFFF); // 8%
+  static const w12 = Color(0x1FFFFFFF); // 12%
+  static const w15 = Color(0x26FFFFFF); // 15%
+  static const w25 = Color(0x40FFFFFF); // 25%
+  static const w33 = Color(0x55FFFFFF); // 33%
+  static const w50 = Color(0x80FFFFFF); // 50%
+  static const w67 = Color(0xAAFFFFFF); // 67%
+  static const w80 = Color(0xCCFFFFFF); // 80%
+  static const w85 = Color(0xD9FFFFFF); // 85%
+}
+
+/// 탭별 테마 컬러 (각 탭 고유 아이덴티티)
+class TabTheme {
+  final Color accent;
+  final Color deep;
+  final Color light;
+  final Color bgStart;
+  final Color bgEnd;
+
+  const TabTheme({
+    required this.accent,
+    required this.deep,
+    required this.light,
+    required this.bgStart,
+    required this.bgEnd,
+  });
+
+  /// 지도 — 마젠타 (장소·핀)
+  static const map = TabTheme(
+    accent: Color(0xFFE91E8C),
+    deep: Color(0xFFC2186F),
+    light: Color(0xFFFF4DA1),
+    bgStart: Color(0xFFFFFFFF),
+    bgEnd: Color(0xFFFFE0EE),
+  );
+
+  /// 도감 핀 — 라벤더 (수집)
+  static const pinCollection = TabTheme(
+    accent: Color(0xFF8B5CF6),
+    deep: Color(0xFF5B21B6),
+    light: Color(0xFFA78BFA),
+    bgStart: Color(0xFFFFFFFF),
+    bgEnd: Color(0xFFC7BFFF),
+  );
+
+  /// 도감 칭호 — 코랄 (성취)
+  static const badge = TabTheme(
+    accent: Color(0xFFF2A66B),
+    deep: Color(0xFFE04A1F),
+    light: Color(0xFFFFE5D0),
+    bgStart: Color(0xFFFFE5D0),
+    bgEnd: Color(0xFFF2A66B),
+  );
+
+  /// 활동 — 민트 (성장)
+  static const activity = TabTheme(
+    accent: Color(0xFF34D399),
+    deep: Color(0xFF0F766E),
+    light: Color(0xFFBFEFE4),
+    bgStart: Color(0xFFE6FAF5),
+    bgEnd: Color(0xFF7BC9B5),
+  );
+
+  /// 프로필 — 블루 (정체성)
+  static const profile = TabTheme(
+    accent: Color(0xFF3B82F6),
+    deep: Color(0xFF1E40AF),
+    light: Color(0xFF93C5FD),
+    bgStart: Color(0xFFDCEDFF),
+    bgEnd: Color(0xFFBFDBFE),
+  );
+}
+
+/// 디자인 토큰 — radius / spacing / font size
+class AppTokens {
+  // Radius
+  static const radiusCard = 28.0;
+  static const radiusPill = 999.0;
+  static const radiusChip = 20.0;
+  static const radiusButton = 18.0;
+
+  // Spacing
+  static const spaceXs = 4.0;
+  static const spaceSm = 8.0;
+  static const spaceMd = 12.0;
+  static const spaceLg = 16.0;
+  static const spaceXl = 24.0;
+  static const space2xl = 32.0;
+
+  // Font sizes
+  static const sizeDisplay = 40.0;
+  static const sizeH1 = 32.0;
+  static const sizeH2 = 22.0;
+  static const sizeH3 = 17.0;
+  static const sizeBody = 14.0;
+  static const sizeCaption = 12.0;
+  static const sizeTag = 11.0;
+
+  // Font family
+  static const fontDisplay = 'Pretendard';
+  static const fontBody = 'Pretendard';
 }
 
 class AppEmotions {

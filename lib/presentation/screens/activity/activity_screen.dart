@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../application/providers/pin_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/pin_model.dart';
+import '../../widgets/cosmic/blob.dart';
+import '../../widgets/cosmic/cosmic_background.dart';
 
 // ─── 화면 ─────────────────────────────────────────────────────────────────────
 
@@ -66,23 +68,26 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
 
     return Scaffold(
-      backgroundColor: context.bgColor,
-      body: CustomScrollView(
+      backgroundColor: Colors.black,
+      body: Stack(children: [
+        const CosmicBackground(),
+        CustomScrollView(
         slivers: [
           // 앱바
           SliverAppBar(
             pinned: true,
             expandedHeight: 100,
-            backgroundColor: context.bgColor,
+            backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.fromLTRB(20, 0, 0, 16),
+            flexibleSpace: const FlexibleSpaceBar(
+              titlePadding: EdgeInsets.fromLTRB(20, 0, 0, 16),
               title: Text(
                 '활동',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
-                  color: context.labelColor,
+                  color: AppColors.textPrimary,
+                  fontFamily: AppTokens.fontDisplay,
                 ),
               ),
             ),
@@ -94,22 +99,25 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
                 children: [
-                  _ColoredStatCard(
+                  _PastelStatCard(
                     label: '총 핀',
                     value: '$totalPins',
-                    color: AppColors.primary,
+                    pastelColor: AppColors.pastelLavender,
+                    accentColor: const Color(0xFF5B4A8A),
                   ),
                   const SizedBox(width: 10),
-                  _ColoredStatCard(
+                  _PastelStatCard(
                     label: '이번 달',
                     value: '$thisMonthPins',
-                    color: AppColors.accent,
+                    pastelColor: AppColors.pastelPink,
+                    accentColor: const Color(0xFF9D174D),
                   ),
                   const SizedBox(width: 10),
-                  _ColoredStatCard(
+                  _PastelStatCard(
                     label: '활동 일수',
                     value: '$activeDays',
-                    color: const Color(0xFF34D399),
+                    pastelColor: AppColors.pastelMint,
+                    accentColor: TabTheme.activity.deep,
                   ),
                 ],
               ),
@@ -168,8 +176,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                           margin: const EdgeInsets.symmetric(horizontal: 2),
                           decoration: BoxDecoration(
                             color: isActive
-                                ? AppColors.primary
-                                : AppColors.grey.withValues(alpha: 0.35),
+                                ? TabTheme.activity.accent
+                                : Colors.white.withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(3),
                           ),
                         );
@@ -178,9 +186,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
+                const Text(
                   '스와이프하며 카드 전환',
-                  style: TextStyle(fontSize: 11, color: context.subLabelColor),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontFamily: AppTokens.fontBody,
+                  ),
                 ),
                 const SizedBox(height: 120),
               ],
@@ -188,51 +200,60 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           ),
         ],
       ),
+      ]),
     );
   }
 }
 
-// ─── 통계 색상 카드 ─────────────────────────────────────────────────────────────
+// ─── 통계 파스텔 카드 ──────────────────────────────────────────────────────
 
-class _ColoredStatCard extends StatelessWidget {
+class _PastelStatCard extends StatelessWidget {
   final String label;
   final String value;
-  final Color color;
+  final Color pastelColor;
+  final Color accentColor;
 
-  const _ColoredStatCard({
+  const _PastelStatCard({
     required this.label,
     required this.value,
-    required this.color,
+    required this.pastelColor,
+    required this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, pastelColor],
+          ),
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
               value,
-              style: TextStyle(
-                fontSize: 22,
+              style: const TextStyle(
+                fontSize: 26,
                 fontWeight: FontWeight.w800,
-                color: color,
+                color: AppColors.textOnPastel,
+                fontFamily: AppTokens.fontDisplay,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 8),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: color.withValues(alpha: 0.75),
+                color: accentColor,
+                fontFamily: AppTokens.fontBody,
               ),
             ),
           ],
@@ -292,13 +313,13 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
               cellColor = Colors.transparent;
               textColor = Colors.transparent;
             } else if (count == 0) {
-              cellColor = context.bgColor;
-              textColor = AppColors.grey;
+              cellColor = Colors.transparent;
+              textColor = AppColors.textMuted;
             } else if (count == 1) {
-              cellColor = AppColors.primary.withValues(alpha: 0.35);
+              cellColor = TabTheme.activity.accent.withValues(alpha: 0.35);
               textColor = Colors.white;
             } else {
-              cellColor = AppColors.primary;
+              cellColor = TabTheme.activity.deep;
               textColor = Colors.white;
             }
 
@@ -312,7 +333,7 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
                       color: cellColor,
                       borderRadius: BorderRadius.circular(6),
                       border: isToday
-                          ? Border.all(color: context.labelColor, width: 1.5)
+                          ? Border.all(color: Colors.white, width: 1.5)
                           : null,
                     ),
                     child: valid
@@ -322,7 +343,7 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: count > 0 ? FontWeight.w700 : FontWeight.w400,
-                                color: isToday && count == 0 ? context.labelColor : textColor,
+                                color: isToday && count == 0 ? Colors.white : textColor,
                               ),
                             ),
                           )
@@ -339,15 +360,12 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: context.cardBg,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.bgCosmicCardStart, AppColors.bgCosmicCardEnd],
+        ),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,10 +375,11 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
             children: [
               Text(
                 '${now.year}년 ${now.month}월',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: context.labelColor,
+                  color: AppColors.textPrimary,
+                  fontFamily: AppTokens.fontDisplay,
                 ),
               ),
               const SizedBox(width: 8),
@@ -369,7 +388,8 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.grey,
+                  color: AppColors.textMuted,
+                  fontFamily: AppTokens.fontBody,
                 ),
               ),
               const Spacer(),
@@ -379,20 +399,21 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
                   children: [
                     Text(
                       _expanded ? '접기' : '전체 보기',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
+                        color: TabTheme.activity.light,
+                        fontFamily: AppTokens.fontBody,
                       ),
                     ),
                     AnimatedRotation(
                       turns: _expanded ? 0.5 : 0.0,
                       duration: const Duration(milliseconds: 250),
                       curve: Curves.easeOutCubic,
-                      child: const Icon(
+                      child: Icon(
                         Icons.keyboard_arrow_down_rounded,
                         size: 16,
-                        color: AppColors.primary,
+                        color: TabTheme.activity.light,
                       ),
                     ),
                   ],
@@ -412,7 +433,8 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.grey,
+                            color: AppColors.textMuted,
+                            fontFamily: AppTokens.fontBody,
                           ),
                         ),
                       ),
@@ -455,181 +477,229 @@ class _DayCard extends StatelessWidget {
     final weekday = _weekdays[day.weekday - 1];
     final hasPins = pins.isNotEmpty;
 
-    final Color cardColor;
-    final Color accentColor;
-    if (isToday && hasPins) {
-      cardColor = AppColors.primary.withValues(alpha: 0.14);
-      accentColor = AppColors.primary;
-    } else if (isToday) {
-      cardColor = context.cardBg;
-      accentColor = AppColors.primary;
-    } else if (hasPins) {
-      cardColor = AppColors.primary.withValues(alpha: 0.08);
-      accentColor = AppColors.primary.withValues(alpha: 0.75);
-    } else {
-      cardColor = context.cardBg;
-      accentColor = AppColors.grey;
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: isToday
-              ? AppColors.primary.withValues(alpha: 0.4)
-              : context.glassBorder,
-          width: isToday ? 1.5 : 1,
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Stack(
         children: [
-          // 날짜 뱃지 + 요일
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '${day.month}월 ${day.day}일',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: accentColor,
-                  ),
-                ),
+          // 베이스 — 활동(민트) 파스텔 그라디언트 / 빈 날은 다크 글래스
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: hasPins
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.pastelMint,
+                          Color(0xFF7BC9B5),
+                        ],
+                      )
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.bgCosmicCardStart,
+                          AppColors.bgCosmicCardEnd,
+                        ],
+                      ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                weekday,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: context.subLabelColor,
-                ),
-              ),
-              if (isToday) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    '오늘',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-              const Spacer(),
-              Text(
-                '${pins.length}개',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: hasPins ? accentColor : AppColors.grey,
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 14),
-
-          // 핀 목록 or 기록 없음
-          if (!hasPins)
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+          // 카드 안 블롭 (있는 날만)
+          if (hasPins) ...[
+            Positioned(
+              right: -40,
+              top: -20,
+              child: Blob(
+                size: 180,
+                color: TabTheme.activity.accent,
+                opacity: 0.55,
+              ),
+            ),
+            Positioned(
+              right: -10,
+              top: 80,
+              child: Blob(
+                size: 120,
+                color: TabTheme.activity.deep,
+                opacity: 0.55,
+              ),
+            ),
+          ],
+          // 컨텐츠
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 날짜 뱃지 + 요일
+                Row(
                   children: [
-                    Icon(
-                      Icons.location_off_rounded,
-                      size: 32,
-                      color: AppColors.grey.withValues(alpha: 0.5),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: hasPins
+                            ? TabTheme.activity.light
+                            : AppOverlays.w08,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${day.month}월 ${day.day}일',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: hasPins
+                              ? AppColors.textOnPastel
+                              : AppColors.textSecondary,
+                          fontFamily: AppTokens.fontBody,
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '기록 없음',
+                    const SizedBox(width: 8),
+                    Text(
+                      weekday,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.grey,
+                        color: hasPins
+                            ? TabTheme.activity.deep
+                            : AppColors.textMuted,
+                        fontFamily: AppTokens.fontBody,
+                      ),
+                    ),
+                    if (isToday) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: TabTheme.activity.deep,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          '오늘',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            fontFamily: AppTokens.fontBody,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    Text(
+                      '${pins.length}개',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: hasPins
+                            ? AppColors.textOnPastel
+                            : AppColors.textMuted,
+                        fontFamily: AppTokens.fontBody,
                       ),
                     ),
                   ],
                 ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.separated(
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: pins.length > 4 ? 4 : pins.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, i) {
-                  if (i == 3 && pins.length > 4) {
-                    return Text(
-                      '+ ${pins.length - 3}개 더',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: accentColor,
-                      ),
-                    );
-                  }
-                  final pin = pins[i];
-                  final emotionColor = AppEmotions.colorOf(pin.emotion);
-                  return Row(
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: emotionColor.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Icon(
-                            AppEmotions.iconOf(pin.emotion),
-                            size: 14,
-                            color: emotionColor,
+                const SizedBox(height: 14),
+
+                // 핀 목록 or 기록 없음
+                if (!hasPins)
+                  Expanded(
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.location_off_rounded,
+                            size: 32,
+                            color: AppColors.textMuted.withValues(alpha: 0.6),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          pin.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: context.labelColor,
+                          const SizedBox(height: 8),
+                          const Text(
+                            '기록 없음',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textMuted,
+                              fontFamily: AppTokens.fontBody,
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                      Text(
-                        '${pin.createdAt.hour.toString().padLeft(2, '0')}:${pin.createdAt.minute.toString().padLeft(2, '0')}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.grey,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: ListView.separated(
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: pins.length > 4 ? 4 : pins.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) {
+                        if (i == 3 && pins.length > 4) {
+                          return Text(
+                            '+ ${pins.length - 3}개 더',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: TabTheme.activity.deep,
+                              fontFamily: AppTokens.fontBody,
+                            ),
+                          );
+                        }
+                        final pin = pins[i];
+                        return Row(
+                          children: [
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  AppEmotions.iconOf(pin.emotion),
+                                  size: 14,
+                                  color: TabTheme.activity.deep,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                pin.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textOnPastel,
+                                  fontFamily: AppTokens.fontBody,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${pin.createdAt.hour.toString().padLeft(2, '0')}:${pin.createdAt.minute.toString().padLeft(2, '0')}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: TabTheme.activity.deep,
+                                fontFamily: AppTokens.fontBody,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );

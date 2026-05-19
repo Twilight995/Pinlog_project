@@ -6,6 +6,9 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
+import '../../widgets/cosmic/blob.dart';
+import '../../widgets/cosmic/category_palette.dart';
+import '../../widgets/cosmic/cosmic_background.dart';
 
 // ─── 뱃지 모델 ────────────────────────────────────────────────────────────────
 
@@ -344,22 +347,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     final unlockedCount = pinCountByShape.values.where((c) => c > 0).length;
 
     return Scaffold(
-      backgroundColor: context.bgColor,
-      body: NestedScrollView(
+      backgroundColor: Colors.black,
+      body: Stack(children: [
+        const CosmicBackground(),
+        NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
             pinned: true,
             expandedHeight: 140,
-            backgroundColor: context.bgColor,
+            backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 56),
-              title: Text(
+              title: const Text(
                 '수집 도감',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w800,
-                  color: context.labelColor,
+                  color: AppColors.textPrimary,
+                  fontFamily: AppTokens.fontDisplay,
                 ),
               ),
             ),
@@ -392,6 +398,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
           ],
         ),
       ),
+      ]),
     );
   }
 }
@@ -590,6 +597,7 @@ class _PinDogamTab extends StatelessWidget {
                   final emoji = AppConstants.pinShapeEmojis[shape] ?? '📍';
                   final name = AppConstants.pinShapeNames[shape] ?? shape;
                   return _PinCategoryCard(
+                    shape: shape,
                     emoji: emoji,
                     name: name,
                     count: count,
@@ -625,6 +633,7 @@ class _PinDogamTab extends StatelessWidget {
                   final emoji = AppConstants.pinShapeEmojis[shape] ?? '📍';
                   final name = AppConstants.pinShapeNames[shape] ?? shape;
                   return _PinCategoryCard(
+                    shape: shape,
                     emoji: emoji,
                     name: name,
                     count: 0,
@@ -648,7 +657,7 @@ class _PinDogamTab extends StatelessWidget {
   }
 }
 
-// ─── 핀 수집 현황 카드 (칭호 카드와 동일한 그라데이션 헤더 카드) ──────────────
+// ─── 핀 수집 현황 카드 (라벤더 그라디언트 + 블롭) ──────────────────────────
 
 class _PinCollectionCard extends StatelessWidget {
   final int unlockedCount;
@@ -662,116 +671,159 @@ class _PinCollectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = totalCount > 0 ? unlockedCount / totalCount : 0.0;
-    final percent = (progress * 100).round();
     final remaining = totalCount - unlockedCount;
-    final color = AppColors.primary;
-
     final subtitle = unlockedCount == 0
         ? '아직 수집한 핀이 없어요. 첫 핀을 심어볼까요?'
         : remaining == 0
             ? '모든 핀을 수집했어요. 진정한 핀 마스터!'
             : '$totalCount종 중 $unlockedCount종을 모았어요';
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            color.withValues(alpha: 0.15),
-            color.withValues(alpha: 0.05),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppTokens.radiusCard),
+      child: SizedBox(
+        height: 170,
+        child: Stack(
+          children: [
+            // 라벤더 그라디언트 베이스
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.pastelLavender.withValues(alpha: 0.6),
+                      AppColors.pastelLavender,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // 블롭 1 (큰 보라)
+            Positioned(
+              right: -30,
+              top: -30,
+              child: Blob(
+                size: 230,
+                color: AppColors.primary,
+                opacity: 0.7,
+              ),
+            ),
+            // 블롭 2 (작은 진보라)
+            Positioned(
+              right: -60,
+              top: 50,
+              child: Blob(
+                size: 170,
+                color: AppColors.primaryDark,
+                opacity: 0.65,
+              ),
+            ),
+            // 컨텐츠
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 알약
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(AppTokens.radiusPill),
+                        ),
+                        child: const Text(
+                          '수집 현황',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textOnPastel,
+                            fontFamily: AppTokens.fontBody,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // ↗ 버튼
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.arrow_outward_rounded,
+                          size: 20,
+                          color: AppColors.textOnPastel,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '$unlockedCount / $totalCount종',
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textOnPastel,
+                      fontFamily: AppTokens.fontDisplay,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF5B4A8A),
+                      fontFamily: AppTokens.fontBody,
+                    ),
+                  ),
+                  const Spacer(),
+                  // 진행률 바
+                  Stack(
+                    children: [
+                      Container(
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: progress.clamp(0.0, 1.0),
+                        child: Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: AppColors.textOnPastel,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              '수집 현황',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '$unlockedCount',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                ),
-              ),
-              Text(
-                ' / $totalCount종',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: color.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(fontSize: 13, color: AppColors.grey),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                remaining > 0 ? '남은 핀 $remaining종' : '컴플리트',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.grey,
-                ),
-              ),
-              Text(
-                '$percent%',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
-              minHeight: 6,
-              backgroundColor: context.progressBg,
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-        ],
       ),
     );
   }
 }
 
-// ─── 핀 카테고리 카드 (뱃지 카드와 동일한 디자인) ─────────────────────────────
+
+// ─── 핀 카테고리 카드 (파스텔 그라디언트 / 다크 글래스) ───────────────────
 
 class _PinCategoryCard extends StatelessWidget {
+  final String shape;
   final String emoji;
   final String name;
   final int count;
@@ -779,6 +831,7 @@ class _PinCategoryCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _PinCategoryCard({
+    required this.shape,
     required this.emoji,
     required this.name,
     required this.count,
@@ -788,73 +841,107 @@ class _PinCategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return unlocked ? _buildUnlocked() : _buildLocked();
+  }
+
+  Widget _buildUnlocked() {
+    final palette = CategoryPalette.forShape(shape);
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: unlocked ? 1.0 : 0.45,
-        child: Container(
-          decoration: BoxDecoration(
-            color: context.cardBg,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: unlocked
-                ? [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.15),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : [],
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [palette.start, palette.end],
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: unlocked
-                      ? AppColors.primary.withValues(alpha: 0.12)
-                      : context.emptyStateBg,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: unlocked
-                      ? Text(emoji, style: const TextStyle(fontSize: 26))
-                      : const Icon(
-                          Icons.lock_rounded,
-                          size: 26,
-                          color: AppColors.grey,
-                        ),
-                ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  name,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: unlocked ? context.labelColor : AppColors.grey,
-                  ),
-                ),
+              child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 24)),
               ),
-              const SizedBox(height: 2),
-              Text(
-                unlocked ? '$count곳' : '미수집',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: unlocked ? AppColors.primary : AppColors.greyPale,
-                ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textOnPastel,
+                fontFamily: AppTokens.fontBody,
               ),
-            ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '$count곳',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: palette.accent,
+                fontFamily: AppTokens.fontBody,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocked() {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppColors.bgLockedStart, AppColors.bgLockedEnd],
           ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 고스트 이모지 (어떤 카테고리인지 흐릿하게 힌트)
+            Opacity(
+              opacity: 0.25,
+              child: Text(emoji, style: const TextStyle(fontSize: 32)),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF9A8FC0),
+                fontFamily: AppTokens.fontBody,
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              '미수집',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6B5E94),
+                fontFamily: AppTokens.fontBody,
+              ),
+            ),
+          ],
         ),
       ),
     );

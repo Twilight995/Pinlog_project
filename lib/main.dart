@@ -14,8 +14,90 @@ void main() async {
   await PinRepository.init();
   await ProfileRepository.init();
   await _seedTestRouteIfNeeded();
+  await _seedDemoCategoriesIfNeeded();
 
   runApp(const ProviderScope(child: PinlogApp()));
+}
+
+// 새 카테고리(cafe/drinking/shopping/drive/running) 데모 핀 (최초 1회만)
+Future<void> _seedDemoCategoriesIfNeeded() async {
+  const sentinel = 'demo_cafe_001';
+  final repo = PinRepository();
+  if (repo.getAll().any((p) => p.id == sentinel)) return;
+
+  final now = DateTime.now();
+  final seeds = <PinModel>[
+    PinModel(
+      id: 'demo_cafe_001',
+      title: '성수동 블루보틀',
+      description: '',
+      latitude: 37.5447, longitude: 127.0557,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 5, pinShape: 'cafe',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now, countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_cafe_002', title: '연남동 작은 카페', description: '',
+      latitude: 37.5654, longitude: 126.9255,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 4, pinShape: 'cafe',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 7)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_cafe_003', title: '망원동 골목 카페', description: '',
+      latitude: 37.5560, longitude: 126.9015,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 3, pinShape: 'cafe',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 14)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_drinking_001', title: '광장시장 육회골목', description: '',
+      latitude: 37.5703, longitude: 126.9999,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 5, pinShape: 'drinking',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 1)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_drinking_002', title: '을지로 노포', description: '',
+      latitude: 37.5667, longitude: 126.9919,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 4, pinShape: 'drinking',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 4)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_shopping_001', title: '성수 콘크리트', description: '',
+      latitude: 37.5447, longitude: 127.0560,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 4, pinShape: 'shopping',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 2)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_drive_001', title: '강변북로 야경', description: '',
+      latitude: 37.5443, longitude: 127.0001,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 5, pinShape: 'drive',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 3)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_running_001', title: '서울숲 산책로', description: '',
+      latitude: 37.5443, longitude: 127.0374,
+      emotion: '별로에요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 2, pinShape: 'running',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 5)), countryCode: 'KR',
+    ),
+  ];
+
+  for (final pin in seeds) {
+    await repo.save(pin);
+  }
 }
 
 // 잠실→한강→뚝섬→광화문 테스트 경로 핀 (2026-04-28, 최초 1회만)
