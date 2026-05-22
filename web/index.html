@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Pinlog — 지도 위에 핀을 심어 여행과 일상을 기록하는 라이프 로깅 다이어리">
+  <title>Pinlog — 지도 위의 라이프 다이어리</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,300&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <!-- ── SCROLL PROGRESS ── -->
+  <div id="scrollProgress"></div>
+
+  <!-- ── NAV ── -->
+  <nav id="mainNav">
+    <div class="nav-logo">Pinlog</div>
+    <ul class="nav-links">
+      <li><a href="#how">사용법</a></li>
+      <li><a href="#showcase">화면</a></li>
+      <li><a href="#features">기능</a></li>
+      <li><a href="#collection">컬렉션</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── HERO ── -->
+  <section class="hero">
+    <div class="hero-bg" id="heroBg"></div>
+    <div class="hero-vignette"></div>
+    <div class="hero-grain"></div>
+    <div class="hero-orb"></div>
+    <div class="hero-content">
+      <span class="hero-eyebrow">Pin Route Life Logging Diary</span>
+      <h1 class="hero-title">Pinlog</h1>
+      <p class="hero-subtitle">
+        당신의 모든 순간을<br>지도 위에 새기다.
+      </p>
+      <div class="hero-actions">
+        <a href="#how" class="btn-primary">시작하기 →</a>
+        <a href="#memories" class="btn-outline">기억 보기</a>
+      </div>
+    </div>
+    <div class="scroll-cue">
+      <span>Scroll</span>
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <!-- ── STATEMENT ── -->
+  <section class="statement">
+    <div class="statement-inner">
+      <p class="statement-kicker reveal">Why Pinlog</p>
+      <p class="statement-text reveal d1">
+        여행은 <span class="hi">흘러가지 않는다.</span><br>
+        핀 하나로, 그 순간은<br>
+        <span class="hi2">영원히 남는다.</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ── PHONE SHOWCASE (sticky) ── -->
+  <section class="showcase-section" id="showcase">
+    <div class="showcase-sticky-col">
+      <div class="showcase-phone-wrap">
+        <img class="showcase-phone-img" id="sPhoneImg" src="images/핀%20표시도.jpg" alt="앱 화면">
+      </div>
+    </div>
+    <div class="showcase-text-col">
+      <div class="s-slide s-active" data-src="images/핀%20표시도.jpg">
+        <p class="s-label">Screen 01 — Map</p>
+        <h2 class="s-title">지도 위에서<br>모든 것을</h2>
+        <p class="s-body">Mapbox 기반 고해상도 지도 위에 핀을 심으세요. 내가 다녀온 모든 곳이 지도 위에 영구적으로 기록됩니다.</p>
+        <div class="s-tags">
+          <span class="s-tag">Mapbox GL</span>
+          <span class="s-tag">핀 클러스터링</span>
+          <span class="s-tag">10가지 핀 모양</span>
+        </div>
+      </div>
+      <div class="s-slide" data-src="images/다크%20모드%20.jpg">
+        <p class="s-label">Screen 02 — Dark Mode</p>
+        <h2 class="s-title">밤에도<br>아름다운 기록</h2>
+        <p class="s-body">시스템 테마에 따라 완벽하게 전환됩니다. 체리블라썸, 달, 태양 등 개성 있는 핀 아이콘으로 나만의 지도를 만드세요.</p>
+        <div class="s-tags">
+          <span class="s-tag">다크 모드</span>
+          <span class="s-tag">핀 아이콘</span>
+          <span class="s-tag">커스텀 테마</span>
+        </div>
+      </div>
+      <div class="s-slide" data-src="images/핀%20생성%20바텀시트.png">
+        <p class="s-label">Screen 03 — Pin Create</p>
+        <h2 class="s-title">탭 한 번으로<br>기억을 저장</h2>
+        <p class="s-body">지도를 탭하면 바로 기록 화면이 열립니다. 감정, 날씨, 동행자, 사진, 공개 범위까지 한 번에 남기세요.</p>
+        <div class="s-tags">
+          <span class="s-tag">감정 태깅</span>
+          <span class="s-tag">날씨 기록</span>
+          <span class="s-tag">사진 첨부</span>
+        </div>
+      </div>
+      <div class="s-slide" data-src="images/핀%20상세%20바텀시트.png">
+        <p class="s-label">Screen 04 — Pin Detail</p>
+        <h2 class="s-title">모든 순간이<br>담긴 곳</h2>
+        <p class="s-body">핀을 탭하면 그 순간의 모든 기억이 펼쳐집니다. 감정, 날씨, 함께한 사람, 사진까지 — 완전한 기억의 조각.</p>
+        <div class="s-tags">
+          <span class="s-tag">핀 상세 보기</span>
+          <span class="s-tag">사진 갤러리</span>
+          <span class="s-tag">편집 · 삭제</span>
+        </div>
+      </div>
+      <div class="s-slide" data-src="images/활동%20탭.jpg">
+        <p class="s-label">Screen 05 — Activity</p>
+        <h2 class="s-title">매일의 기록을<br>한눈에</h2>
+        <p class="s-body">히트맵 캘린더로 기록이 많은 날을 확인하세요. 카드를 스와이프하면 달력이 자동으로 동기화됩니다.</p>
+        <div class="s-tags">
+          <span class="s-tag">히트맵 캘린더</span>
+          <span class="s-tag">일별 카드</span>
+          <span class="s-tag">통계 대시보드</span>
+        </div>
+      </div>
+      <div class="s-slide" data-src="images/수집%20도감%20(%20칭호%20도감%20첫%20화면%20).jpg">
+        <p class="s-label">Screen 06 — Collection</p>
+        <h2 class="s-title">여행할수록<br>성장하는 나</h2>
+        <p class="s-body">핀을 쌓을수록 칭호가 오르고 뱃지를 수집합니다. 나만의 여행 이야기가 도감이 되는 경험.</p>
+        <div class="s-tags">
+          <span class="s-tag">칭호 시스템</span>
+          <span class="s-tag">뱃지 컬렉션</span>
+          <span class="s-tag">프레임 꾸미기</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HOW IT WORKS ── -->
+  <section class="how-section" id="how">
+    <div class="how-inner">
+      <div class="how-header">
+        <p class="sec-label reveal">How it works</p>
+        <h2 class="sec-title reveal d1" style="margin-top:16px;">세 번의 탭으로<br>기억이 완성됩니다</h2>
+      </div>
+      <div class="how-steps">
+        <div class="how-step reveal">
+          <div class="step-num">Step 01</div>
+          <div class="step-icon">🗺️</div>
+          <h3 class="step-title">지도를 탭하세요</h3>
+          <p class="step-desc">지도 위 어느 곳이든 탭하면 핀 생성 화면이 열립니다. 현재 위치를 자동으로 감지하거나 원하는 곳을 직접 선택하세요.</p>
+        </div>
+        <div class="how-step reveal d1">
+          <div class="step-num">Step 02</div>
+          <div class="step-icon">✏️</div>
+          <h3 class="step-title">순간을 기록하세요</h3>
+          <p class="step-desc">제목, 감정, 날씨, 동행자, 사진을 남기세요. 감정 강도 1–5로 그 순간이 얼마나 특별했는지도 표현할 수 있습니다.</p>
+        </div>
+        <div class="how-step reveal d2">
+          <div class="step-num">Step 03</div>
+          <div class="step-icon">📍</div>
+          <h3 class="step-title">핀으로 남겨집니다</h3>
+          <p class="step-desc">저장된 핀은 지도 위에 영구적으로 표시됩니다. 핀이 쌓일수록 나만의 여행 지도가 완성되고 칭호도 올라갑니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── GLOBE ── -->
+  <section class="globe-section" id="features">
+    <div class="split-inner left-img">
+      <div class="img-card slide-from-left">
+        <img src="images/지구본.jpg" alt="3D 지구본">
+      </div>
+      <div class="text-block">
+        <p class="sec-label reveal">3D Globe</p>
+        <h2 class="sec-title reveal d1">지구 위의<br>내 이야기</h2>
+        <p class="sec-body reveal d2">
+          Mapbox 3D 지구본 위에서 내가 다녀온 모든 곳을 입체적으로 확인하세요.
+          핀이 쌓일수록 지구 위에 나만의 여행 지도가 완성됩니다.
+          어디서든 내가 걸어온 발자국을 한눈에 볼 수 있습니다.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── INTERLUDE ── -->
+  <div class="interlude">
+    <div class="interlude-orb"></div>
+    <p class="interlude-text reveal">
+      지도를 탭하는 순간,<br>
+      <em>기억이 시작된다.</em>
+    </p>
+  </div>
+
+  <!-- ── GALLERY ── -->
+  <section class="gallery-section" id="memories">
+    <div class="sec-header">
+      <p class="sec-label reveal">App Screens</p>
+      <h2 class="sec-title reveal d1">직접 만든<br>진짜 앱 화면</h2>
+      <p class="sec-sub reveal d2">지도부터 활동 기록, 수집 도감까지.<br>실제로 구현된 Pinlog의 모든 화면을 만나보세요.</p>
+    </div>
+    <div class="gallery-track" id="galleryTrack">
+      <div class="g-card">
+        <img src="images/핀 표시도.jpg" alt="지도 위 핀">
+        <div class="g-overlay">
+          <div class="g-badge">🗺️ 지도 탭</div>
+          <div class="g-title">지도 위의 내 기억들</div>
+          <div class="g-meta">핀이 쌓일수록 완성되는 나만의 지도</div>
+        </div>
+      </div>
+      <div class="g-card">
+        <img src="images/다크 모드 .jpg" alt="다크 모드 지도">
+        <div class="g-overlay">
+          <div class="g-badge">🌙 다크 모드</div>
+          <div class="g-title">밤에도 아름다운 기록</div>
+          <div class="g-meta">한강 · 독특한 핀 아이콘</div>
+        </div>
+      </div>
+      <div class="g-card">
+        <img src="images/핀 생성 바텀시트.png" alt="핀 생성">
+        <div class="g-overlay">
+          <div class="g-badge">✏️ 새 기록</div>
+          <div class="g-title">이 순간을 기록하다</div>
+          <div class="g-meta">감정 · 날씨 · 동행자 · 사진</div>
+        </div>
+      </div>
+      <div class="g-card">
+        <img src="images/핀 상세 바텀시트.png" alt="핀 상세">
+        <div class="g-overlay">
+          <div class="g-badge">📖 핀 상세</div>
+          <div class="g-title">코엑스 별마당 도서관</div>
+          <div class="g-meta">좋아요 · ☁️ 호림 · 전체공개</div>
+        </div>
+      </div>
+      <div class="g-card">
+        <img src="images/활동 탭.jpg" alt="활동 탭">
+        <div class="g-overlay">
+          <div class="g-badge">⚡ 활동</div>
+          <div class="g-title">매일의 기록을 한눈에</div>
+          <div class="g-meta">캘린더 히트맵 · 일별 카드</div>
+        </div>
+      </div>
+      <div class="g-card">
+        <img src="images/수집 도감 ( 칭호 도감 첫 화면 ).jpg" alt="칭호 도감">
+        <div class="g-overlay">
+          <div class="g-badge">🏆 수집 도감</div>
+          <div class="g-title">기록 마니아</div>
+          <div class="g-meta">칭호 · 뱃지 · 프레임 컬렉션</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── MAP ── -->
+  <section class="map-section">
+    <div class="split-inner right-img">
+      <div class="text-block">
+        <p class="sec-label reveal">Live Map</p>
+        <h2 class="sec-title reveal d1">지도 위에서<br>모든 것을</h2>
+        <p class="sec-body reveal d2">
+          Mapbox 기반 고해상도 지도 위에 핀을 심으세요.
+          줌 레벨에 따라 핀이 클러스터로 묶이고, 필터로
+          원하는 기억만 골라볼 수 있습니다.
+          지도를 탭하는 순간 바로 기록이 시작됩니다.
+        </p>
+      </div>
+      <div class="map-img-card slide-from-right">
+        <img src="images/핀 표시도.jpg" alt="지도 위 핀 표시">
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FEATURES GRID ── -->
+  <section class="features-section">
+    <div class="feat-inner">
+      <p class="sec-label reveal">Features</p>
+      <h2 class="sec-title reveal d1" style="margin-top:16px;">핀에 담을 수 있는<br>모든 것</h2>
+      <div class="feat-grid">
+        <div class="feat-cell reveal">
+          <span class="feat-icon">😊</span>
+          <h3 class="feat-name">감정 태깅</h3>
+          <p class="feat-desc">그 순간의 감정을 기록하세요. 좋아요부터 별로에요까지, 감정 강도 1–5로 세밀하게 남깁니다.</p>
+        </div>
+        <div class="feat-cell reveal d1">
+          <span class="feat-icon">⛅</span>
+          <h3 class="feat-name">날씨 기록</h3>
+          <p class="feat-desc">맑음, 비, 흐림, 눈, 바람. 그날의 하늘도 핀과 함께 기억됩니다. 날씨는 기억의 일부니까요.</p>
+        </div>
+        <div class="feat-cell reveal d2">
+          <span class="feat-icon">👥</span>
+          <h3 class="feat-name">동행자</h3>
+          <p class="feat-desc">혼자였는지, 누구와 함께였는지도 남길 수 있습니다. 함께한 사람도 소중한 추억입니다.</p>
+        </div>
+        <div class="feat-cell reveal d3">
+          <span class="feat-icon">📷</span>
+          <h3 class="feat-name">사진 첨부</h3>
+          <p class="feat-desc">핀마다 사진을 첨부할 수 있습니다. 텍스트로 다 담기 어려운 순간을 사진으로 남기세요.</p>
+        </div>
+        <div class="feat-cell reveal d4">
+          <span class="feat-icon">🔒</span>
+          <h3 class="feat-name">공개 범위</h3>
+          <p class="feat-desc">전체공개, 친구공개, 나만보기. 핀마다 공개 범위를 설정해 나만의 비밀 핀도 만들 수 있습니다.</p>
+        </div>
+        <div class="feat-cell reveal d5">
+          <span class="feat-icon">📍</span>
+          <h3 class="feat-name">핀 클러스터링</h3>
+          <p class="feat-desc">여러 핀이 모인 곳은 자동으로 클러스터로 표시됩니다. 내 여행의 밀도를 한눈에 확인하세요.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── EMOTION SPOTLIGHT ── -->
+  <section class="emotion-section">
+    <div class="emotion-inner">
+      <div>
+        <p class="sec-label reveal">Emotion</p>
+        <h2 class="sec-title reveal d1" style="margin:18px 0 26px;">감정까지<br>기록하다</h2>
+        <p class="sec-body reveal d2">
+          단순한 위치 기록이 아닙니다. 그날의 감정, 날씨, 함께한 사람,
+          감정의 강도까지 — 핀 하나에 그 순간 전체를 담습니다.
+        </p>
+        <div class="intensity-wrap reveal d3">
+          <div class="intensity-label">감정 강도</div>
+          <div class="intensity-dots">
+            <div class="i-dot active"></div>
+            <div class="i-dot active"></div>
+            <div class="i-dot active"></div>
+            <div class="i-dot active"></div>
+            <div class="i-dot"></div>
+          </div>
+          <p style="font-size:12px; color:var(--c-text-dim); margin-top:10px;">강해요 — 오늘은 정말 좋은 하루였다</p>
+        </div>
+      </div>
+      <div class="emotion-cards reveal d2">
+        <div class="emotion-card">
+          <div class="ec-icon">😊</div>
+          <div class="ec-label">좋아요</div>
+          <div class="ec-sub">행복한 기억</div>
+        </div>
+        <div class="emotion-card">
+          <div class="ec-icon">😔</div>
+          <div class="ec-label">별로에요</div>
+          <div class="ec-sub">솔직한 기록</div>
+        </div>
+        <div class="emotion-card">
+          <div class="ec-icon">☀️</div>
+          <div class="ec-label">맑음</div>
+          <div class="ec-sub">그날의 하늘</div>
+        </div>
+        <div class="emotion-card">
+          <div class="ec-icon">🌧️</div>
+          <div class="ec-label">비</div>
+          <div class="ec-sub">빗소리의 기억</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── COLLECTION ── -->
+  <section class="badge-section" id="collection">
+    <div class="badge-inner">
+      <p class="sec-label reveal">Collection</p>
+      <h2 class="sec-title reveal d1" style="margin-top:16px;">여행할수록<br>성장하는 나</h2>
+      <p class="sec-sub reveal d2" style="margin-top:18px;">핀을 심을수록 칭호가 오릅니다. 12가지 특별한 뱃지도 수집해보세요.</p>
+
+      <div class="progression reveal d3">
+        <div class="prog-step">
+          <div class="prog-row">
+            <div class="prog-spacer"></div>
+            <div class="prog-dot">🌱</div>
+            <div class="prog-line"></div>
+          </div>
+          <div class="prog-info">
+            <div class="prog-name">여행새내기</div>
+            <div class="prog-req">시작</div>
+          </div>
+        </div>
+        <div class="prog-step">
+          <div class="prog-row">
+            <div class="prog-dot">🚶</div>
+            <div class="prog-line"></div>
+          </div>
+          <div class="prog-info">
+            <div class="prog-name">나들이러버</div>
+            <div class="prog-req">5곳~</div>
+          </div>
+        </div>
+        <div class="prog-step">
+          <div class="prog-row">
+            <div class="prog-dot">✈️</div>
+            <div class="prog-line"></div>
+          </div>
+          <div class="prog-info">
+            <div class="prog-name">여행자</div>
+            <div class="prog-req">15곳~</div>
+          </div>
+        </div>
+        <div class="prog-step">
+          <div class="prog-row">
+            <div class="prog-dot">🗺️</div>
+            <div class="prog-line"></div>
+          </div>
+          <div class="prog-info">
+            <div class="prog-name">탐험가</div>
+            <div class="prog-req">30곳~</div>
+          </div>
+        </div>
+        <div class="prog-step">
+          <div class="prog-row">
+            <div class="prog-dot">⭐</div>
+            <div class="prog-spacer"></div>
+          </div>
+          <div class="prog-info">
+            <div class="prog-name">여행달인</div>
+            <div class="prog-req">60곳~</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="badge-grid reveal d4">
+        <div class="b-item">
+          <div class="b-emoji">🗺️</div>
+          <div class="b-name">첫 여행지</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">5️⃣</div>
+          <div class="b-name">5곳 달성</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">🔟</div>
+          <div class="b-name">10곳 달성</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">🏆</div>
+          <div class="b-name">30곳 달성</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">💎</div>
+          <div class="b-name">최고의 여행</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">🧳</div>
+          <div class="b-name">솔로 트래블러</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">👫</div>
+          <div class="b-name">동행 트래블러</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">🌦️</div>
+          <div class="b-name">날씨무관</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">🍂</div>
+          <div class="b-name">사계절</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">📅</div>
+          <div class="b-name">이달의 여행자</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">🎖️</div>
+          <div class="b-name">여행 베테랑</div>
+        </div>
+        <div class="b-item">
+          <div class="b-emoji">🌅</div>
+          <div class="b-name">주말 여행러</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ROUTE ── -->
+  <section class="route-section" id="route">
+    <div class="route-bg" id="routeBg"></div>
+    <div class="route-overlay"></div>
+    <div class="route-content">
+      <p class="sec-label reveal">Route</p>
+      <h2 class="sec-title reveal d1">지나온 길을<br>돌아보다</h2>
+      <p class="sec-body reveal d2">
+        핀들을 잇는 폴리라인으로 내가 걸어온 경로를 시각화합니다.
+        발자국 하나하나가 모여 나만의 여행 루트가 완성됩니다.
+        어떤 길을 걸어왔는지, 지도 위에서 다시 돌아보세요.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">Pinlog</div>
+        <p>당신의 이야기를 지도 위에</p>
+        <div class="footer-stack">
+          <span class="stack-chip">Flutter</span>
+          <span class="stack-chip">Mapbox</span>
+          <span class="stack-chip">Riverpod</span>
+          <span class="stack-chip">Hive</span>
+          <span class="stack-chip">Dart</span>
+        </div>
+      </div>
+      <div class="footer-nav">
+        <div class="footer-nav-col">
+          <h4>서비스</h4>
+          <a href="#how">사용법</a>
+          <a href="#features">기능</a>
+          <a href="#collection">컬렉션</a>
+          <a href="#route">경로</a>
+        </div>
+        <div class="footer-nav-col">
+          <h4>기록</h4>
+          <a href="#memories">기억</a>
+          <a href="#features">감정 태깅</a>
+          <a href="#features">날씨 기록</a>
+          <a href="#features">동행자</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p class="footer-copy">© 2026 Pinlog. All rights reserved.</p>
+      <p class="footer-copy">Flutter · Mapbox · Made with ♥</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+
+</html>
