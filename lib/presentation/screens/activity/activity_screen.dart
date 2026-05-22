@@ -5,7 +5,6 @@ import '../../../application/providers/pin_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/blob.dart';
-import '../../widgets/cosmic/cosmic_background.dart';
 
 // ─── 화면 ─────────────────────────────────────────────────────────────────────
 
@@ -68,10 +67,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(children: [
-        const CosmicBackground(),
-        CustomScrollView(
+      backgroundColor: Colors.transparent,
+      body: CustomScrollView(
         slivers: [
           // 앱바
           SliverAppBar(
@@ -200,7 +197,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           ),
         ],
       ),
-      ]),
     );
   }
 }

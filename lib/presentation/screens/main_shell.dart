@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers/pin_provider.dart';
+import '../widgets/cosmic/cosmic_background.dart';
 import '../widgets/cosmic/pill_nav.dart';
 import 'activity/activity_screen.dart';
 import 'feed/feed_screen.dart';
@@ -19,13 +20,20 @@ class MainShell extends ConsumerWidget {
 
     return Scaffold(
       extendBody: true,
-      body: _AnimatedTabView(
-        activeTab: activeTab,
-        children: const [
-          MapScreen(),
-          FeedScreen(),
-          ActivityScreen(),
-          ProfileScreen(),
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // 전역 코스믹 배경 — 모든 탭 공유 (탭 전환 시 매번 그려지지 않음)
+          const RepaintBoundary(child: CosmicBackground()),
+          _AnimatedTabView(
+            activeTab: activeTab,
+            children: const [
+              MapScreen(),
+              FeedScreen(),
+              ActivityScreen(),
+              ProfileScreen(),
+            ],
+          ),
         ],
       ),
       bottomNavigationBar: PillNav(

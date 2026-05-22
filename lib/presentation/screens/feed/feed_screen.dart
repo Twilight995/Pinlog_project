@@ -8,7 +8,6 @@ import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/blob.dart';
 import '../../widgets/cosmic/category_palette.dart';
-import '../../widgets/cosmic/cosmic_background.dart';
 
 // ─── 뱃지 모델 ────────────────────────────────────────────────────────────────
 
@@ -347,10 +346,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     final unlockedCount = pinCountByShape.values.where((c) => c > 0).length;
 
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(children: [
-        const CosmicBackground(),
-        NestedScrollView(
+      backgroundColor: Colors.transparent,
+      body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
             pinned: true,
@@ -398,7 +395,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
           ],
         ),
       ),
-      ]),
     );
   }
 }

@@ -746,36 +746,31 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ?_locationMarker,
     };
 
+    // 디버그용: Google 지도 비활성화 (CPU 진단)
+    // ignore: dead_code, unused_local_variable
+    final _ = (mapType, styleJson, allMarkers);
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
         body: Stack(
           children: [
-            // ── Google 지도 ─────────────────────────────────────────────────
-            GoogleMap(
-              initialCameraPosition: _initialCamera,
-              mapType: mapType,
-              style: styleJson,
-              markers: allMarkers,
-              polylines: _polylines,
-              onMapCreated: _onMapCreated,
-              onTap: _onMapTap,
-              onCameraMove: (pos) {
-                final newZoom = pos.zoom;
-                if ((newZoom - _zoom).abs() > 0.15) {
-                  _zoom = newZoom;
-                  _scheduleUpdate(
-                    _currentPins.isEmpty
-                        ? ref.read(filteredPinsProvider)
-                        : _currentPins,
-                  );
-                }
-              },
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              compassEnabled: false,
-              mapToolbarEnabled: false,
+            // ── 지도 placeholder (Google Maps API 비활성) ────────────────────
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0xFF1A1827),
+                child: Center(
+                  child: Text(
+                    '🗺  지도 영역 (API 비활성)',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             ),
 
             // ── 지도 컨트롤 ──────────────────────────────────────────────

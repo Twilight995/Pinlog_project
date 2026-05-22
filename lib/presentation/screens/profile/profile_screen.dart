@@ -12,7 +12,6 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../../widgets/cosmic/blob.dart';
-import '../../widgets/cosmic/cosmic_background.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Screen
@@ -41,11 +40,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         .length;
 
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(children: [
-        const CosmicBackground(),
-        SafeArea(
-          child: CustomScrollView(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
               // ── 컴팩트 헤더 (아바타 + Welcome + 편집 버튼) ─────────────────
@@ -113,8 +110,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SliverToBoxAdapter(child: SizedBox(height: 120)),
             ],
           ),
-        ),
-      ]),
+      ),
     );
   }
 
