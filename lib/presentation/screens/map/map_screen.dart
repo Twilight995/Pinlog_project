@@ -25,16 +25,11 @@ class _Cluster {
   final List<PinModel> pins;
   final double lat;
   final double lng;
-  const _Cluster({
-    required this.pins,
-    required this.lat,
-    required this.lng,
-  });
+  const _Cluster({required this.pins, required this.lat, required this.lng});
 }
 
 // 핀 카테고리 → 이모지
-String _shapeEmoji(String shape) =>
-    AppConstants.pinShapeEmojis[shape] ?? '📍';
+String _shapeEmoji(String shape) => AppConstants.pinShapeEmojis[shape] ?? '📍';
 
 // ─── 마커 비트맵 생성 (캐시됨) ────────────────────────────────────────────────
 
@@ -46,7 +41,8 @@ Future<BitmapDescriptor> _buildMarkerBitmap({
   String emoji = '',
   required double pixelRatio,
 }) async {
-  final key = 'm_${isCluster}_${count}_${emoji}_${pixelRatio.toStringAsFixed(1)}';
+  final key =
+      'm_${isCluster}_${count}_${emoji}_${pixelRatio.toStringAsFixed(1)}';
   if (_markerCache.containsKey(key)) return _markerCache[key]!;
 
   final logicalSize = isCluster ? 52.0 : 46.0;
@@ -256,7 +252,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   final Map<String, String> _pinIds = {};
   final Map<String, LatLng> _clusterCenters = {};
 
-  double _zoom = 13.0;
+  final double _zoom = 13.0;
   bool _showFilterSheet = false;
   bool _mapReady = false;
 
@@ -348,12 +344,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final clusters = _computeClusters(pins, _zoom);
 
     final descriptors = await Future.wait(
-      clusters.map((c) => _buildMarkerBitmap(
-            isCluster: c.pins.length > 1,
-            count: c.pins.length,
-            emoji: c.pins.length == 1 ? _shapeEmoji(c.pins.first.pinShape) : '',
-            pixelRatio: pixelRatio,
-          )),
+      clusters.map(
+        (c) => _buildMarkerBitmap(
+          isCluster: c.pins.length > 1,
+          count: c.pins.length,
+          emoji: c.pins.length == 1 ? _shapeEmoji(c.pins.first.pinShape) : '',
+          pixelRatio: pixelRatio,
+        ),
+      ),
     );
 
     if (!mounted) return;
@@ -370,13 +368,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       } else {
         _clusterCenters[id] = LatLng(c.lat, c.lng);
       }
-      newMarkers.add(Marker(
-        markerId: MarkerId(id),
-        position: LatLng(c.lat, c.lng),
-        icon: descriptors[i],
-        anchor: const Offset(0.5, 0.5),
-        onTap: () => _onMarkerTap(id),
-      ));
+      newMarkers.add(
+        Marker(
+          markerId: MarkerId(id),
+          position: LatLng(c.lat, c.lng),
+          icon: descriptors[i],
+          anchor: const Offset(0.5, 0.5),
+          onTap: () => _onMarkerTap(id),
+        ),
+      );
     }
 
     setState(() {
@@ -614,23 +614,27 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     for (var i = 0; i < pins.length; i++) {
       final id = 'route_$i';
       _pinIds[id] = pins[i].id;
-      newMarkers.add(Marker(
-        markerId: MarkerId(id),
-        position: LatLng(pins[i].latitude, pins[i].longitude),
-        icon: descriptors[i],
-        anchor: const Offset(0.5, 0.5),
-        onTap: () => _onMarkerTap(id),
-      ));
+      newMarkers.add(
+        Marker(
+          markerId: MarkerId(id),
+          position: LatLng(pins[i].latitude, pins[i].longitude),
+          icon: descriptors[i],
+          anchor: const Offset(0.5, 0.5),
+          onTap: () => _onMarkerTap(id),
+        ),
+      );
     }
 
     final newPolylines = <Polyline>{};
     if (pins.length >= 2) {
-      newPolylines.add(Polyline(
-        polylineId: const PolylineId('route_line'),
-        points: pins.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-        color: lineColor,
-        width: 5,
-      ));
+      newPolylines.add(
+        Polyline(
+          polylineId: const PolylineId('route_line'),
+          points: pins.map((p) => LatLng(p.latitude, p.longitude)).toList(),
+          color: lineColor,
+          width: 5,
+        ),
+      );
     }
 
     setState(() {
@@ -688,12 +692,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   /// 위자드 푸시 — Google LatLng → latlong2 LatLng 변환 후 호출.
   void _openWizardWith(LatLng target) {
     if (!mounted) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => PinWizardScreen(
-        location: ll.LatLng(target.latitude, target.longitude),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PinWizardScreen(
+          location: ll.LatLng(target.latitude, target.longitude),
+        ),
       ),
-    ));
+    );
   }
 
   // ─── 지도 스타일 적용 ──────────────────────────────────────────────────────
@@ -717,12 +723,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   void _onMapTap(LatLng pos) {
     if (_zoom < 4) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => PinWizardScreen(
-        location: ll.LatLng(pos.latitude, pos.longitude),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            PinWizardScreen(location: ll.LatLng(pos.latitude, pos.longitude)),
       ),
-    ));
+    );
   }
 
   // ─── 레이어 시트 ──────────────────────────────────────────────────────────
@@ -767,10 +774,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final currentStyle = ref.watch(mapStyleProvider);
     final (mapType, styleJson) = _styleFor(currentStyle);
 
-    final allMarkers = <Marker>{
-      ..._markers,
-      ?_locationMarker,
-    };
+    final allMarkers = <Marker>{..._markers, ?_locationMarker};
 
     // 디버그용: Google 지도 비활성화 (CPU 진단)
     // ignore: dead_code, unused_local_variable
@@ -1485,9 +1489,7 @@ class _LayerSheet extends StatelessWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
-                      color: isActive
-                          ? AppColors.primary
-                          : context.glassBorder,
+                      color: isActive ? AppColors.primary : context.glassBorder,
                       width: isActive ? 2.5 : 1,
                     ),
                     boxShadow: isActive
@@ -1521,9 +1523,15 @@ class _LayerSheet extends StatelessWidget {
                           right: 0,
                           child: Column(
                             children: [
-                              Container(height: 1.5, color: accentColor.withValues(alpha: 0.35)),
+                              Container(
+                                height: 1.5,
+                                color: accentColor.withValues(alpha: 0.35),
+                              ),
                               const SizedBox(height: 10),
-                              Container(height: 1, color: accentColor.withValues(alpha: 0.2)),
+                              Container(
+                                height: 1,
+                                color: accentColor.withValues(alpha: 0.2),
+                              ),
                             ],
                           ),
                         ),
@@ -1531,7 +1539,10 @@ class _LayerSheet extends StatelessWidget {
                           top: 0,
                           bottom: 28,
                           left: 30,
-                          child: Container(width: 1.5, color: accentColor.withValues(alpha: 0.2)),
+                          child: Container(
+                            width: 1.5,
+                            color: accentColor.withValues(alpha: 0.2),
+                          ),
                         ),
                         Positioned(
                           left: 0,
@@ -1585,7 +1596,9 @@ class _LayerSheet extends StatelessWidget {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.primary.withValues(alpha: 0.5),
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.5,
+                                    ),
                                     blurRadius: 6,
                                   ),
                                 ],

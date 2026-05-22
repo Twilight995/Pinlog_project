@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../data/repositories/profile_repository.dart';
 
 class UserProfile {
@@ -19,23 +20,24 @@ class UserProfile {
     String? subtitle,
     Object? photoPath = _sentinel,
     String? borderStyle,
-  }) =>
-      UserProfile(
-        nickname: nickname ?? this.nickname,
-        subtitle: subtitle ?? this.subtitle,
-        photoPath: photoPath == _sentinel ? this.photoPath : photoPath as String?,
-        borderStyle: borderStyle ?? this.borderStyle,
-      );
+  }) => UserProfile(
+    nickname: nickname ?? this.nickname,
+    subtitle: subtitle ?? this.subtitle,
+    photoPath: photoPath == _sentinel ? this.photoPath : photoPath as String?,
+    borderStyle: borderStyle ?? this.borderStyle,
+  );
 }
 
 // sentinel so we can distinguish "not passed" from "explicitly null"
 const _sentinel = Object();
 
-final profileRepositoryProvider =
-    Provider<ProfileRepository>((ref) => ProfileRepository());
+final profileRepositoryProvider = Provider<ProfileRepository>(
+  (ref) => ProfileRepository(),
+);
 
-final profileProvider =
-    StateNotifierProvider<ProfileNotifier, UserProfile>((ref) {
+final profileProvider = StateNotifierProvider<ProfileNotifier, UserProfile>((
+  ref,
+) {
   return ProfileNotifier(ref.read(profileRepositoryProvider));
 });
 
@@ -43,12 +45,14 @@ class ProfileNotifier extends StateNotifier<UserProfile> {
   final ProfileRepository _repo;
 
   ProfileNotifier(this._repo)
-      : super(UserProfile(
+    : super(
+        UserProfile(
           nickname: _repo.getNickname(),
           subtitle: _repo.getSubtitle(),
           photoPath: _repo.getPhotoPath(),
           borderStyle: _repo.getBorderStyle(),
-        ));
+        ),
+      );
 
   Future<void> update({
     String? nickname,

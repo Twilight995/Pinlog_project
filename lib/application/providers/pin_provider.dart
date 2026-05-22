@@ -33,16 +33,91 @@ class PinsNotifier extends StateNotifier<List<PinModel>> {
     final now = DateTime.now();
     final uuid = const Uuid();
 
-    final seeds = <({String shape, String title, double lat, double lng, String emotion, int intensity, int daysAgo})>[
-      (shape: 'cafe',     title: '성수동 블루보틀',      lat: 37.5447, lng: 127.0557, emotion: '좋아요',  intensity: 5, daysAgo: 0),
-      (shape: 'cafe',     title: '연남동 작은 카페',     lat: 37.5654, lng: 126.9255, emotion: '좋아요',  intensity: 4, daysAgo: 7),
-      (shape: 'cafe',     title: '망원동 골목 카페',     lat: 37.5560, lng: 126.9015, emotion: '좋아요',  intensity: 3, daysAgo: 14),
-      (shape: 'drinking', title: '광장시장 육회골목',    lat: 37.5703, lng: 126.9999, emotion: '좋아요',  intensity: 5, daysAgo: 1),
-      (shape: 'drinking', title: '을지로 노포',          lat: 37.5667, lng: 126.9919, emotion: '좋아요',  intensity: 4, daysAgo: 4),
-      (shape: 'shopping', title: '성수 콘크리트',        lat: 37.5447, lng: 127.0560, emotion: '좋아요',  intensity: 4, daysAgo: 2),
-      (shape: 'drive',    title: '강변북로 야경',        lat: 37.5443, lng: 127.0001, emotion: '좋아요',  intensity: 5, daysAgo: 3),
-      (shape: 'running',  title: '서울숲 산책로',        lat: 37.5443, lng: 127.0374, emotion: '별로에요', intensity: 2, daysAgo: 5),
-    ];
+    final seeds =
+        <
+          ({
+            String shape,
+            String title,
+            double lat,
+            double lng,
+            String emotion,
+            int intensity,
+            int daysAgo,
+          })
+        >[
+          (
+            shape: 'cafe',
+            title: '성수동 블루보틀',
+            lat: 37.5447,
+            lng: 127.0557,
+            emotion: '좋아요',
+            intensity: 5,
+            daysAgo: 0,
+          ),
+          (
+            shape: 'cafe',
+            title: '연남동 작은 카페',
+            lat: 37.5654,
+            lng: 126.9255,
+            emotion: '좋아요',
+            intensity: 4,
+            daysAgo: 7,
+          ),
+          (
+            shape: 'cafe',
+            title: '망원동 골목 카페',
+            lat: 37.5560,
+            lng: 126.9015,
+            emotion: '좋아요',
+            intensity: 3,
+            daysAgo: 14,
+          ),
+          (
+            shape: 'drinking',
+            title: '광장시장 육회골목',
+            lat: 37.5703,
+            lng: 126.9999,
+            emotion: '좋아요',
+            intensity: 5,
+            daysAgo: 1,
+          ),
+          (
+            shape: 'drinking',
+            title: '을지로 노포',
+            lat: 37.5667,
+            lng: 126.9919,
+            emotion: '좋아요',
+            intensity: 4,
+            daysAgo: 4,
+          ),
+          (
+            shape: 'shopping',
+            title: '성수 콘크리트',
+            lat: 37.5447,
+            lng: 127.0560,
+            emotion: '좋아요',
+            intensity: 4,
+            daysAgo: 2,
+          ),
+          (
+            shape: 'drive',
+            title: '강변북로 야경',
+            lat: 37.5443,
+            lng: 127.0001,
+            emotion: '좋아요',
+            intensity: 5,
+            daysAgo: 3,
+          ),
+          (
+            shape: 'running',
+            title: '서울숲 산책로',
+            lat: 37.5443,
+            lng: 127.0374,
+            emotion: '별로에요',
+            intensity: 2,
+            daysAgo: 5,
+          ),
+        ];
 
     for (final s in seeds) {
       final pin = PinModel(
@@ -98,7 +173,10 @@ class PinsNotifier extends StateNotifier<List<PinModel>> {
     var updated = false;
     for (final pin in missing) {
       try {
-        final marks = await placemarkFromCoordinates(pin.latitude, pin.longitude);
+        final marks = await placemarkFromCoordinates(
+          pin.latitude,
+          pin.longitude,
+        );
         final code = marks.firstOrNull?.isoCountryCode?.toUpperCase() ?? '';
         if (code.isNotEmpty) {
           await _repo.save(pin.copyWith(countryCode: code));
@@ -152,8 +230,9 @@ final triggerCreatePinProvider = StateProvider<bool>((ref) => false);
 // 지도 스타일
 enum MapStyleOption { standard, satellite, outdoors, dark, light, streets }
 
-final mapStyleProvider =
-    StateProvider<MapStyleOption>((ref) => MapStyleOption.standard);
+final mapStyleProvider = StateProvider<MapStyleOption>(
+  (ref) => MapStyleOption.standard,
+);
 
 final filteredPinsProvider = Provider<List<PinModel>>((ref) {
   final pins = ref.watch(pinsProvider);
