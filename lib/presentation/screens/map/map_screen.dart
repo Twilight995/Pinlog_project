@@ -16,8 +16,8 @@ import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/common/glass_button.dart';
 import '../../widgets/map/filter_sheet.dart';
-import '../../widgets/map/pin_create_sheet.dart';
 import '../../widgets/map/pin_detail_sheet.dart';
+import '../pin_wizard/pin_wizard_screen.dart';
 
 // ─── 클러스터 모델 ─────────────────────────────────────────────────────────────
 
@@ -640,6 +640,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   // ─── + 버튼: 현재 위치에서 핀 생성 ────────────────────────────────────────
+  //
+  // 안드로이드 에뮬레이터에서 `getCurrentPosition(high)`는 GPS fix를 위해
+  // 3~5초 걸림. UX 개선을 위해:
+  //   1) `getLastKnownPosition` — 즉시 (수 ms)
+  //   2) 없으면 `medium` 정확도로 짧은 타임아웃
+  //   3) 그래도 실패하면 마지막 카메라 위치 / 초기 좌표 fallback
+  // 결과적으로 위자드가 거의 즉시 푸시됨.
 
   Future<void> _createPinAtCurrentLocation() async {
     var perm = await Geolocator.checkPermission();
@@ -648,24 +655,45 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
     if (perm == LocationPermission.denied ||
         perm == LocationPermission.deniedForever) {
+      // 권한 없어도 일단 초기 좌표로 위자드 띄움
+      _openWizardWith(_initialCamera.target);
       return;
     }
+
+    // 1) 마지막 알려진 위치 — 즉시 반환되므로 UX 부드러움
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        _openWizardWith(LatLng(last.latitude, last.longitude));
+        return;
+      }
+    } catch (_) {}
+
+    // 2) 빠른 정확도(medium) + 짧은 타임아웃으로 fallback
     try {
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 2),
         ),
       );
-      if (!mounted) return;
-      showAppSheet<void>(
-        context,
-        builder: (sheetCtx) => PinCreateSheet(
-          location: ll.LatLng(pos.latitude, pos.longitude),
-          onClose: () => Navigator.of(sheetCtx).pop(),
-          onSaved: () => Navigator.of(sheetCtx).pop(),
-        ),
-      );
+      _openWizardWith(LatLng(pos.latitude, pos.longitude));
+      return;
     } catch (_) {}
+
+    // 3) 모두 실패 — 초기 카메라 좌표로 띄움 (서울 시청)
+    _openWizardWith(_initialCamera.target);
+  }
+
+  /// 위자드 푸시 — Google LatLng → latlong2 LatLng 변환 후 호출.
+  void _openWizardWith(LatLng target) {
+    if (!mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => PinWizardScreen(
+        location: ll.LatLng(target.latitude, target.longitude),
+      ),
+    ));
   }
 
   // ─── 지도 스타일 적용 ──────────────────────────────────────────────────────
@@ -689,14 +717,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   void _onMapTap(LatLng pos) {
     if (_zoom < 4) return;
-    showAppSheet<void>(
-      context,
-      builder: (_) => PinCreateSheet(
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => PinWizardScreen(
         location: ll.LatLng(pos.latitude, pos.longitude),
-        onClose: () => Navigator.of(context).pop(),
-        onSaved: () => Navigator.of(context).pop(),
       ),
-    );
+    ));
   }
 
   // ─── 레이어 시트 ──────────────────────────────────────────────────────────

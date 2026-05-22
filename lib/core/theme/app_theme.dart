@@ -87,13 +87,13 @@ class TabTheme {
     required this.bgEnd,
   });
 
-  /// 지도 — 마젠타 (장소·핀)
+  /// 지도 — 포레스트 그린 (장소·핀, 자연/탐험)
   static const map = TabTheme(
-    accent: Color(0xFFE91E8C),
-    deep: Color(0xFFC2186F),
-    light: Color(0xFFFF4DA1),
+    accent: Color(0xFF5A9970),
+    deep: Color(0xFF2A6B4A),
+    light: Color(0xFF8AB89A),
     bgStart: Color(0xFFFFFFFF),
-    bgEnd: Color(0xFFFFE0EE),
+    bgEnd: Color(0xFFD2E5D8),
   );
 
   /// 도감 핀 — 라벤더 (수집)
