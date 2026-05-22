@@ -56,7 +56,7 @@ class StepPhoto extends StatelessWidget {
     return WizardScaffold(
       totalSteps: totalSteps,
       currentStep: currentStep,
-      stepLabel: 'STEP 1 OF 4',
+      stepLabel: 'STEP 1 OF 5',
       questionTop: '이 순간을',
       questionBottom: '사진으로 남길까요?',
       subtitle: '최대 5장까지 · 나중에 추가해도 좋아요',

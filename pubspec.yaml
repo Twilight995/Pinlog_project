@@ -35,8 +35,8 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
-  # 지도 (Google Maps)
-  google_maps_flutter: ^2.10.0
+  # 지도 (Mapbox)
+  mapbox_maps_flutter: ^2.5.0
   latlong2: ^0.9.1
 
   # 상태관리

@@ -46,3 +46,6 @@ app.*.map.json
 .claude/
 .claude/
 .claude/
+
+# Local secrets (Mapbox / API tokens 등)
+/lib/core/secrets.dart

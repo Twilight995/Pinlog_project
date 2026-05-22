@@ -7,10 +7,7 @@
         android:label="pinlog"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <!-- Google Maps API Key: 여기에 실제 키를 넣으세요 -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyBvBJAT1zKLoakuKunDab8w3P_AUxvn4zY"/>
+        <!-- Mapbox access token은 main.dart에서 MapboxOptions.setAccessToken()으로 주입 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
+import 'core/secrets.dart';
 import 'core/theme/app_theme.dart';
 import 'data/models/pin_model.dart';
 import 'data/repositories/pin_repository.dart';
 import 'data/repositories/profile_repository.dart';
 import 'presentation/screens/main_shell.dart';
+
+/// Mapbox 공개 access token.
+///
+/// 우선순위:
+///   1) `--dart-define=MAPBOX_TOKEN=pk.xxx` 로 주입된 값
+///   2) `lib/core/secrets.dart` 의 `Secrets.mapboxPublicToken` (기본값)
+const _mapboxToken = String.fromEnvironment(
+  'MAPBOX_TOKEN',
+  defaultValue: Secrets.mapboxPublicToken,
+);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +27,16 @@ void main() async {
   await ProfileRepository.init();
   await _seedTestRouteIfNeeded();
   await _seedDemoCategoriesIfNeeded();
+
+  // Mapbox SDK 초기화 — 토큰 설정
+  if (_mapboxToken.isNotEmpty) {
+    MapboxOptions.setAccessToken(_mapboxToken);
+  } else {
+    debugPrint(
+      '⚠️ MAPBOX_TOKEN 이 비어있습니다. '
+      'flutter run --dart-define=MAPBOX_TOKEN=pk.xxxx 로 주입하세요.',
+    );
+  }
 
   runApp(const ProviderScope(child: PinlogApp()));
 }

@@ -75,7 +75,7 @@ class _StepTitleState extends State<StepTitle> {
     return WizardScaffold(
       totalSteps: widget.totalSteps,
       currentStep: widget.currentStep,
-      stepLabel: 'STEP 2 OF 4',
+      stepLabel: 'STEP 2 OF 5',
       questionTop: '이 순간을',
       questionBottom: '한 줄로 적는다면?',
       subtitle: '나중에 돌아봤을 때 떠오를 한 마디',

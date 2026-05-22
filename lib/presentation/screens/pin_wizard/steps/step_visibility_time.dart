@@ -110,7 +110,7 @@ class _StepVisibilityTimeState extends State<StepVisibilityTime> {
     return WizardScaffold(
       totalSteps: widget.totalSteps,
       currentStep: widget.currentStep,
-      stepLabel: 'STEP 4 OF 4',
+      stepLabel: 'STEP 5 OF 5',
       questionTop: '이 기억은',
       questionBottom: '누구에게 보일까요?',
       subtitle: '마지막으로 시간도 한 번 확인해주세요',

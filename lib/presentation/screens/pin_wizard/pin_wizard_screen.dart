@@ -11,6 +11,7 @@ import '../../widgets/cosmic/cosmic_background.dart';
 import '../../../data/models/pin_model.dart';
 import 'pin_success_screen.dart';
 import 'steps/step_companions.dart';
+import 'steps/step_emotion_intensity.dart';
 import 'steps/step_photo.dart';
 import 'steps/step_title.dart';
 import 'steps/step_visibility_time.dart';
@@ -40,7 +41,7 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
   late WizardData _data;
   int _currentStep = 0;
 
-  static const _totalSteps = 4;
+  static const _totalSteps = 5;
 
   @override
   void initState() {
@@ -102,10 +103,10 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
       description: '',
       latitude: _data.location.latitude,
       longitude: _data.location.longitude,
-      emotion: AppConstants.emotions.first,
-      weather: AppConstants.weathers.first,
+      emotion: _data.emotion,
+      weather: _data.weather,
       companions: List.from(_data.companions),
-      intensityLevel: 3,
+      intensityLevel: _data.intensityLevel,
       pinShape: AppConstants.pinShapes.first,
       visibility: _data.visibility,
       photoPaths: List.from(_data.photoPaths),
@@ -159,10 +160,19 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
                 onNext: _goNext,
                 onChange: () => setState(() {}),
               ),
-              StepCompanions(
+              StepEmotionIntensity(
                 data: _data,
                 totalSteps: _totalSteps,
                 currentStep: 2,
+                onClose: _close,
+                onBack: _goBack,
+                onNext: _goNext,
+                onChange: () => setState(() {}),
+              ),
+              StepCompanions(
+                data: _data,
+                totalSteps: _totalSteps,
+                currentStep: 3,
                 onClose: _close,
                 onBack: _goBack,
                 onNext: _goNext,
@@ -172,7 +182,7 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
               StepVisibilityTime(
                 data: _data,
                 totalSteps: _totalSteps,
-                currentStep: 3,
+                currentStep: 4,
                 onClose: _close,
                 onBack: _goBack,
                 onSave: _save,
