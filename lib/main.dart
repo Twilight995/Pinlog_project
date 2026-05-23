@@ -27,6 +27,7 @@ void main() async {
   await ProfileRepository.init();
   await _seedTestRouteIfNeeded();
   await _seedDemoCategoriesIfNeeded();
+  await _seedClusterDemoIfNeeded();
 
   // Mapbox SDK 초기화 — 토큰 설정
   if (_mapboxToken.isNotEmpty) {
@@ -118,6 +119,98 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
   ];
 
   for (final pin in seeds) {
+    await repo.save(pin);
+  }
+}
+
+// 클러스터링 데모용 핀 대량 시드 (서울 인기 지역 밀집 + 외곽 분산, 최초 1회만)
+Future<void> _seedClusterDemoIfNeeded() async {
+  const sentinel = 'demo_cluster_001';
+  final repo = PinRepository();
+  if (repo.getAll().any((p) => p.id == sentinel)) return;
+
+  final now = DateTime.now();
+  // (lat, lng, title, shape, intensity, emotion, daysAgo, companions)
+  final raw = <List<Object>>[
+    // ── 강남역 밀집 (8개) ─────────────────────────────────
+    [37.4979, 127.0276, '강남역 식스슈가', 'cafe', 4, '좋아요', 1, <String>[]],
+    [37.4985, 127.0290, '강남 교보문고', 'reading', 3, '좋아요', 5, <String>['지윤']],
+    [37.4970, 127.0260, '강남 더현대', 'shopping', 5, '좋아요', 2, <String>['수현', '민호']],
+    [37.4992, 127.0282, '강남 노포 갈비', 'drinking', 4, '좋아요', 8, <String>['민호']],
+    [37.4965, 127.0298, '강남 PC방', 'game', 2, '별로에요', 12, <String>[]],
+    [37.5002, 127.0271, '강남 헬스장', 'gym', 3, '좋아요', 3, <String>[]],
+    [37.4977, 127.0312, '강남 디지털 매장', 'tech', 4, '좋아요', 9, <String>['수현']],
+    [37.4988, 127.0245, '강남 인강 카페', 'selfdev', 4, '좋아요', 6, <String>[]],
+
+    // ── 홍대 밀집 (7개) ───────────────────────────────────
+    [37.5563, 126.9220, '홍대 정문 카페', 'cafe', 5, '좋아요', 4, <String>['지윤']],
+    [37.5550, 126.9234, '홍대 클럽거리', 'drinking', 5, '좋아요', 1, <String>['수현', '민호', '지윤']],
+    [37.5572, 126.9209, '홍대 라이브홀', 'drinking', 4, '좋아요', 11, <String>['민호']],
+    [37.5558, 126.9241, '홍대 보드게임 카페', 'game', 3, '좋아요', 7, <String>['수현']],
+    [37.5546, 126.9195, '홍대 헬스장', 'gym', 2, '별로에요', 15, <String>[]],
+    [37.5580, 126.9225, '홍대 옷가게 골목', 'shopping', 3, '좋아요', 2, <String>[]],
+    [37.5565, 126.9252, '홍대 농구장', 'basketball', 4, '좋아요', 5, <String>['민호']],
+
+    // ── 성수동 밀집 (6개) ─────────────────────────────────
+    [37.5435, 127.0540, '성수 카페골목', 'cafe', 4, '좋아요', 10, <String>['지윤']],
+    [37.5458, 127.0571, '성수 편집샵', 'shopping', 5, '좋아요', 3, <String>['수현']],
+    [37.5447, 127.0590, '성수 와인바', 'drinking', 4, '좋아요', 6, <String>['민호', '지윤']],
+    [37.5421, 127.0552, '서울숲 러닝', 'running', 5, '좋아요', 1, <String>[]],
+    [37.5440, 127.0525, '성수 가죽공방', 'selfdev', 3, '좋아요', 13, <String>[]],
+    [37.5462, 127.0548, '성수 자전거 샵', 'tech', 4, '좋아요', 8, <String>[]],
+
+    // ── 이태원 (5개) ─────────────────────────────────────
+    [37.5340, 126.9947, '이태원 펍', 'drinking', 5, '좋아요', 2, <String>['민호', '수현']],
+    [37.5355, 126.9962, '이태원 케밥', 'drinking', 3, '좋아요', 9, <String>[]],
+    [37.5328, 126.9931, '이태원 빈티지샵', 'shopping', 4, '좋아요', 14, <String>['지윤']],
+    [37.5347, 126.9978, '이태원 헬스장', 'gym', 3, '좋아요', 4, <String>[]],
+    [37.5362, 126.9920, '이태원 루프탑 카페', 'cafe', 5, '좋아요', 7, <String>['수현']],
+
+    // ── 명동/종로 (5개) ──────────────────────────────────
+    [37.5636, 126.9826, '명동 거리', 'shopping', 3, '좋아요', 11, <String>[]],
+    [37.5651, 126.9810, '명동 코인노래방', 'game', 4, '좋아요', 6, <String>['민호']],
+    [37.5705, 126.9920, '광화문 교보문고', 'reading', 5, '좋아요', 16, <String>[]],
+    [37.5683, 126.9853, '청계천 산책', 'running', 2, '별로에요', 20, <String>[]],
+    [37.5719, 126.9876, '종로 자기개발 모임', 'selfdev', 4, '좋아요', 8, <String>['지윤', '수현']],
+
+    // ── 잠실/송파 (4개) ──────────────────────────────────
+    [37.5130, 127.1015, '잠실 롯데몰', 'shopping', 4, '좋아요', 5, <String>['민호']],
+    [37.5145, 127.1052, '잠실 야구장', 'soccer', 5, '좋아요', 3, <String>['수현', '민호']],
+    [37.5165, 127.0986, '잠실 카페', 'cafe', 3, '좋아요', 10, <String>[]],
+    [37.5188, 127.0830, '잠실 한강 자전거', 'drive', 4, '좋아요', 1, <String>[]],
+
+    // ── 서울 외곽/분산 (6개) ─────────────────────────────
+    [37.6584, 127.0610, '북한산 등반', 'running', 5, '좋아요', 25, <String>['민호']],
+    [37.4836, 126.9788, '관악산 산책', 'running', 4, '좋아요', 30, <String>[]],
+    [37.6536, 126.8350, '김포 드라이브', 'drive', 5, '좋아요', 18, <String>['지윤', '수현']],
+    [37.4451, 127.1389, '판교 IT밋업', 'selfdev', 4, '좋아요', 12, <String>['민호']],
+    [37.7404, 127.0470, '의정부 카페', 'cafe', 3, '좋아요', 22, <String>[]],
+    [37.4564, 126.7052, '인천 차이나타운', 'drinking', 4, '좋아요', 17, <String>['수현']],
+
+    // ── 타 도시 (3개) ────────────────────────────────────
+    [35.1796, 129.0756, '부산 광안리', 'drive', 5, '좋아요', 40, <String>['민호', '수현']],
+    [35.1604, 129.1635, '부산 해운대 러닝', 'running', 5, '좋아요', 41, <String>[]],
+    [33.4996, 126.5312, '제주 카페투어', 'cafe', 5, '좋아요', 55, <String>['지윤']],
+  ];
+
+  for (var i = 0; i < raw.length; i++) {
+    final r = raw[i];
+    final pin = PinModel(
+      id: 'demo_cluster_${(i + 1).toString().padLeft(3, '0')}',
+      title: r[2] as String,
+      description: '',
+      latitude: r[0] as double,
+      longitude: r[1] as double,
+      emotion: r[5] as String,
+      weather: '☀️ 맑음',
+      companions: List<String>.from(r[7] as List),
+      intensityLevel: r[4] as int,
+      pinShape: r[3] as String,
+      visibility: '🌐 전체 공개',
+      photoPaths: const [],
+      createdAt: now.subtract(Duration(days: r[6] as int)),
+      countryCode: 'KR',
+    );
     await repo.save(pin);
   }
 }

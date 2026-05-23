@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
 
@@ -14,8 +15,9 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../../widgets/cosmic/category_palette.dart';
+import '../../widgets/common/glass_bottom_sheet.dart';
 import '../../widgets/map/filter_sheet.dart';
-import '../../widgets/map/pin_detail_sheet.dart';
+import '../pin_detail/pin_detail_screen.dart';
 import '../pin_wizard/pin_wizard_screen.dart';
 
 // ─── 화면 ─────────────────────────────────────────────────────────────────────
@@ -28,15 +30,26 @@ class MapScreen extends ConsumerStatefulWidget {
 
 class _MapScreenState extends ConsumerState<MapScreen> {
   MapboxMap? _mapboxMap;
-  PointAnnotationManager? _annoManager;
 
-  /// 마커 ID → 핀 ID
-  final Map<String, String> _pinByMarker = {};
+  /// GeoJsonSource + 레이어 추가가 끝났는지.
+  bool _layersReady = false;
 
-  bool _showFilterSheet = false;
+  /// 이미 등록된 카테고리 아이콘 (shape 키).
+  final Set<String> _iconsRegistered = {};
+
+  // (이전: _showFilterSheet 플래그 — 이제 showModalBottomSheet 사용)
 
   /// 3D 지구본 투영 활성 여부.
   bool _isGlobeView = false;
+
+  // ─── 클러스터링 소스/레이어 ID ────────────────────────────────────────────
+  static const _pinSourceId = 'pinlog-pins';
+  static const _clusterHaloOuterLayerId = 'pinlog-cluster-halo-outer';
+  static const _clusterHaloLayerId = 'pinlog-cluster-halo';
+  static const _clusterCoreLayerId = 'pinlog-cluster-core';
+  static const _clusterCoreInnerLayerId = 'pinlog-cluster-core-inner';
+  static const _clusterCountLayerId = 'pinlog-cluster-count';
+  static const _unclusteredLayerId = 'pinlog-unclustered';
 
   // Mapbox `Point`/`Position`은 const 생성자가 없어 정적 getter로 노출.
   static Point get _initialCenter =>
@@ -66,48 +79,231 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Future<void> _onMapCreated(MapboxMap controller) async {
     _mapboxMap = controller;
 
+    // 스타일 변경으로 MapWidget이 재생성되면 상태 리셋 (새 스타일은 source/layer 없음)
+    _layersReady = false;
+    _iconsRegistered.clear();
+
     // 기본 UI 정리 — 컴퍼스/스케일바 숨김
     await controller.compass.updateSettings(CompassSettings(enabled: false));
     await controller.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
     await controller.attribution.updateSettings(
       AttributionSettings(position: OrnamentPosition.BOTTOM_LEFT, marginBottom: 100),
     );
+  }
 
-    // 핀 마커용 어노테이션 매니저
-    _annoManager = await controller.annotations.createPointAnnotationManager();
-    _annoManager?.tapEvents(onTap: _onMarkerTap);
-
-    // 현재 필터된 핀들로 마커 갱신
-    await _refreshMarkers();
+  /// 스타일이 완전히 로드된 후 트리거 — 클러스터링 셋업.
+  Future<void> _onStyleLoaded(StyleLoadedEventData event) async {
+    if (_mapboxMap == null) return;
+    try {
+      await _setupClustering();
+      await _refreshPinSource();
+    } catch (e, st) {
+      debugPrint('🛑 clustering setup failed: $e\n$st');
+    }
   }
 
   /// 카테고리별 마커 이미지 캐시 (shape + pixelRatio → bytes).
   final Map<String, Uint8List> _markerCache = {};
 
-  Future<void> _refreshMarkers() async {
-    if (_annoManager == null) return;
-    final pins = ref.read(filteredPinsProvider);
+  // ─── 클러스터링 셋업 ──────────────────────────────────────────────────────
 
-    await _annoManager!.deleteAll();
-    _pinByMarker.clear();
+  /// 스타일에 GeoJsonSource + 4개 레이어(헤일로/코어/카운트/개별 핀)를 추가.
+  /// 한 번만 실행되도록 `_layersReady` 가드.
+  Future<void> _setupClustering() async {
+    if (_layersReady || _mapboxMap == null) return;
+    final style = _mapboxMap!.style;
+    debugPrint('🟢 clustering setup start');
 
+    // 1) 카테고리별 아이콘 등록 (개별 핀 SymbolLayer가 shape 이름으로 참조)
+    try {
+      await _registerPinIcons();
+      debugPrint('🟢 ${_iconsRegistered.length} icons registered');
+    } catch (e) {
+      debugPrint('🛑 icon registration failed: $e');
+    }
+
+    // 2) GeoJsonSource (클러스터 활성)
+    await style.addSource(GeoJsonSource(
+      id: _pinSourceId,
+      data: _emptyGeoJson,
+      cluster: true,
+      clusterRadius: 50,
+      clusterMaxZoom: 14,
+    ));
+    debugPrint('🟢 source added');
+
+    // 3a) 외곽 헤일로 — 가장 흐릿한 큰 글로우 (펜의 0.6~1.0 위치)
+    // 펜 size × 1.3, 매우 흐림, 옅은 알파
+    await style.addLayer(CircleLayer(
+      id: _clusterHaloOuterLayerId,
+      sourceId: _pinSourceId,
+      filter: ['has', 'point_count'],
+      circleColorExpression: [
+        'step', ['get', 'point_count'],
+        '#D9CEFA', 10, '#C7BFFF', 50, '#9D8BE0',
+      ],
+      circleRadiusExpression: [
+        'step', ['get', 'point_count'],
+        44, 10, 56, 50, 70,
+      ],
+      circleBlur: 1.0,
+      circleOpacity: 0.30,
+    ));
+
+    // 3b) 내부 헤일로 — 더 또렷한 글로우 (펜의 0~0.35 위치)
+    // 펜 size 그대로, 중간 blur, 강한 알파
+    await style.addLayer(CircleLayer(
+      id: _clusterHaloLayerId,
+      sourceId: _pinSourceId,
+      filter: ['has', 'point_count'],
+      circleColorExpression: [
+        'step', ['get', 'point_count'],
+        '#D9CEFA', 10, '#C7BFFF', 50, '#9D8BE0',
+      ],
+      circleRadiusExpression: [
+        'step', ['get', 'point_count'],
+        32, 10, 41, 50, 52,
+      ],
+      circleBlur: 0.7,
+      circleOpacity: 0.55,
+    ));
+
+    // 4a) 코어 — 진한 라벤더 (펜 core 그라디언트 끝 색)
+    await style.addLayer(CircleLayer(
+      id: _clusterCoreLayerId,
+      sourceId: _pinSourceId,
+      filter: ['has', 'point_count'],
+      circleColorExpression: [
+        'step', ['get', 'point_count'],
+        '#C7BFFF', 10, '#9D8BE0', 50, '#8B7BC9',
+      ],
+      circleRadiusExpression: [
+        'step', ['get', 'point_count'],
+        19, 10, 25, 50, 32,
+      ],
+      circleBlur: 0.2,
+      circleOpacity: 0.95,
+    ));
+
+    // 4b) 코어 하이라이트 — 가운데 옅은 흰빛 (펜 core 그라디언트 시작 색)
+    // 살짝 작은 원 + 옅은 흰 알파로 입체감
+    await style.addLayer(CircleLayer(
+      id: _clusterCoreInnerLayerId,
+      sourceId: _pinSourceId,
+      filter: ['has', 'point_count'],
+      circleColor: 0xFFFFFFFF,
+      circleRadiusExpression: [
+        'step', ['get', 'point_count'],
+        11, 10, 14, 50, 18,
+      ],
+      circleBlur: 0.6,
+      circleOpacity: 0.55,
+      circleTranslate: [-3.0, -3.0],
+    ));
+
+    // 5) 클러스터 카운트 텍스트
+    await style.addLayer(SymbolLayer(
+      id: _clusterCountLayerId,
+      sourceId: _pinSourceId,
+      filter: ['has', 'point_count'],
+      textFieldExpression: ['get', 'point_count_abbreviated'],
+      textSize: 14,
+      textColor: 0xFFFFFFFF,
+      textHaloColor: 0x66000000,
+      textHaloWidth: 1,
+      textFont: ['Open Sans Bold'],
+      textAllowOverlap: true,
+      textIgnorePlacement: true,
+    ));
+
+    // 6) 개별 핀 (클러스터링되지 않은 점)
+    await style.addLayer(SymbolLayer(
+      id: _unclusteredLayerId,
+      sourceId: _pinSourceId,
+      filter: ['!', ['has', 'point_count']],
+      iconImageExpression: ['get', 'shape'],
+      iconSize: 1.0,
+      iconAnchor: IconAnchor.BOTTOM,
+      iconAllowOverlap: true,
+    ));
+
+    _layersReady = true;
+    debugPrint('🟢 clustering setup complete (4 layers added)');
+  }
+
+  /// 카테고리별 아이콘 이미지를 스타일에 등록.
+  /// SymbolLayer에서 `iconImage: ['get', 'shape']` 식으로 참조.
+  ///
+  /// `MbxImage.data` 는 PNG 바이트를 그대로 전달 (네이티브가 디코드).
+  /// raw RGBA로 변환하면 채널 에러 발생.
+  Future<void> _registerPinIcons() async {
+    if (_mapboxMap == null) return;
+    final style = _mapboxMap!.style;
     final pixelRatio =
         WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    // _buildPinIconBytes 와 같은 로직 — 38 logical * pixelRatio
+    final pxSize = (38.0 * pixelRatio).round();
 
-    for (final pin in pins) {
-      final emoji = AppConstants.pinShapeEmojis[pin.pinShape] ?? '📍';
-      final iconBytes = await _buildPinIconBytes(
-        shape: pin.pinShape,
+    for (final shape in AppConstants.pinShapes) {
+      if (_iconsRegistered.contains(shape)) continue;
+      final emoji = AppConstants.pinShapeEmojis[shape] ?? '📍';
+      final pngBytes = await _buildPinIconBytes(
+        shape: shape,
         emoji: emoji,
         pixelRatio: pixelRatio,
       );
-      final ann = await _annoManager!.create(PointAnnotationOptions(
-        geometry: Point(coordinates: Position(pin.longitude, pin.latitude)),
-        image: iconBytes,
-        iconSize: 1.0,
-        iconAnchor: IconAnchor.BOTTOM,
-      ));
-      _pinByMarker[ann.id] = pin.id;
+      await style.addStyleImage(
+        shape,
+        pixelRatio,
+        MbxImage(width: pxSize, height: pxSize, data: pngBytes),
+        false,
+        [],
+        [],
+        null,
+      );
+      _iconsRegistered.add(shape);
+    }
+  }
+
+  /// 빈 FeatureCollection (초기 source data).
+  static const _emptyGeoJson =
+      '{"type":"FeatureCollection","features":[]}';
+
+  /// 필터된 핀들로 GeoJsonSource 데이터 업데이트.
+  Future<void> _refreshPinSource() async {
+    if (_mapboxMap == null || !_layersReady) {
+      debugPrint('⚠️ refreshPinSource skipped (layersReady=$_layersReady)');
+      return;
+    }
+    final pins = ref.read(filteredPinsProvider);
+
+    final features = pins
+        .map((pin) => {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [pin.longitude, pin.latitude],
+              },
+              'properties': {
+                'pinId': pin.id,
+                'shape': pin.pinShape,
+              },
+            })
+        .toList();
+    final geoJson = jsonEncode({
+      'type': 'FeatureCollection',
+      'features': features,
+    });
+
+    try {
+      await _mapboxMap!.style.setStyleSourceProperty(
+        _pinSourceId,
+        'data',
+        geoJson,
+      );
+      debugPrint('🟢 source data updated (${pins.length} pins)');
+    } catch (e) {
+      debugPrint('🛑 source data update failed: $e');
     }
   }
 
@@ -173,35 +369,87 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return bytes;
   }
 
-  void _onMarkerTap(PointAnnotation annotation) {
-    final pinId = _pinByMarker[annotation.id];
-    if (pinId == null) return;
+  /// 핀 상세 화면 진입 (공통 트랜지션).
+  void _openPinDetail(String pinId) {
     HapticFeedback.lightImpact();
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.18),
-      transitionDuration: const Duration(milliseconds: 380),
-      pageBuilder: (ctx, _, _) => Stack(
-        children: [
-          PinDetailSheet(pinId: pinId, onClose: () => Navigator.of(ctx).pop()),
-        ],
-      ),
-      transitionBuilder: (_, anim, _, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
-        child: SlideTransition(
-          position: Tween(begin: const Offset(0, 0.12), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-      ),
-    );
+    Navigator.of(context).push(PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 320),
+      reverseTransitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (_, _, _) => PinDetailScreen(pinId: pinId),
+      transitionsBuilder: (_, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween(begin: const Offset(0, 0.08), end: Offset.zero)
+                .animate(curved),
+            child: child,
+          ),
+        );
+      },
+    ));
   }
 
-  void _onMapTap(MapContentGestureContext ctx) {
+  /// 지도 탭 핸들러.
+  /// 우선순위: 클러스터(줌인) → 개별 핀(상세) → 빈 곳(위자드).
+  Future<void> _onMapTap(MapContentGestureContext ctx) async {
+    if (_mapboxMap == null) return;
+
+    // 1) 탭한 지점의 렌더된 피쳐 쿼리 (클러스터 코어 + 개별 핀 레이어 대상)
+    try {
+      final screenCoord = ctx.touchPosition;
+      final features = await _mapboxMap!.queryRenderedFeatures(
+        RenderedQueryGeometry.fromScreenCoordinate(screenCoord),
+        RenderedQueryOptions(
+          layerIds: [_clusterCoreLayerId, _unclusteredLayerId],
+        ),
+      );
+
+      if (features.isNotEmpty) {
+        final feature = features.first;
+        if (feature == null) return;
+        final qFeature = feature.queriedFeature.feature;
+        final props = (qFeature['properties'] as Map?) ?? const {};
+
+        // 클러스터 — 줌인
+        if (props.containsKey('point_count')) {
+          final geometry = qFeature['geometry'] as Map?;
+          final coords = geometry?['coordinates'] as List?;
+          if (coords != null && coords.length >= 2) {
+            HapticFeedback.lightImpact();
+            final camState = await _mapboxMap!.getCameraState();
+            final targetZoom = (camState.zoom + 2).clamp(1.0, 22.0);
+            await _mapboxMap!.flyTo(
+              CameraOptions(
+                center: Point(
+                  coordinates: Position(
+                    (coords[0] as num).toDouble(),
+                    (coords[1] as num).toDouble(),
+                  ),
+                ),
+                zoom: targetZoom,
+              ),
+              MapAnimationOptions(duration: 600),
+            );
+          }
+          return;
+        }
+
+        // 개별 핀 — 상세 진입
+        final pinId = props['pinId'] as String?;
+        if (pinId != null && pinId.isNotEmpty) {
+          _openPinDetail(pinId);
+          return;
+        }
+      }
+    } catch (_) {
+      // 쿼리 실패 시 빈 곳 탭과 동일 처리로 fallthrough
+    }
+
+    // 2) 빈 곳 → 핀 생성 위자드
     final lat = ctx.point.coordinates.lat;
     final lng = ctx.point.coordinates.lng;
+    if (!mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => PinWizardScreen(
@@ -361,9 +609,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 핀 필터 변경 시 마커 갱신
+    // 핀 필터 변경 시 GeoJsonSource 데이터 갱신
     ref.listen(filteredPinsProvider, (_, _) {
-      _refreshMarkers();
+      _refreshPinSource();
     });
 
     // + 버튼 트리거
@@ -392,6 +640,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               ),
               styleUri: _styleUriFor(currentStyle),
               onMapCreated: _onMapCreated,
+              onStyleLoadedListener: _onStyleLoaded,
               // ignore: deprecated_member_use
               onTapListener: _onMapTap,
             ),
@@ -401,7 +650,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               onRouteTap: () {
                 // TODO: 경로 모드 Mapbox 재구현 예정
               },
-              onFilterTap: () => setState(() => _showFilterSheet = true),
+              onFilterTap: () => FilterSheet.show(context),
               onGlobeTap: _toggleGlobe,
               onLayerTap: () => _showLayerSheet(context, ref),
               isGlobeView: _isGlobeView,
@@ -441,11 +690,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               ),
             ),
 
-            // ── 필터 ─────────────────────────────────────────────────────
-            if (_showFilterSheet)
-              FilterSheet(
-                onClose: () => setState(() => _showFilterSheet = false),
-              ),
           ],
         ),
       ),
@@ -586,174 +830,122 @@ class _LayerSheet extends StatelessWidget {
 
   const _LayerSheet({required this.current, required this.onSelect});
 
-  static const _options = [
-    (MapStyleOption.standard, '기본', '표준 지도', [Color(0xFFE8E0D4), Color(0xFFD4C9A8)], Color(0xFF2A7A4F)),
-    (MapStyleOption.dark, '다크', '야간 모드', [Color(0xFF1C1C2E), Color(0xFF0D0D1A)], Color(0xFF8B5CF6)),
-    (MapStyleOption.satellite, '위성', '항공 사진', [Color(0xFF1A3A2A), Color(0xFF0D2010)], Color(0xFF4ADE80)),
-    (MapStyleOption.outdoors, '야외', '등산·하이킹', [Color(0xFF8DC26A), Color(0xFF3A7A30)], Color(0xFFFFFFFF)),
-    (MapStyleOption.light, '라이트', '밝은 모드', [Color(0xFFF8F5EE), Color(0xFFE8E0D0)], Color(0xFF374151)),
-    (MapStyleOption.streets, '스트리트', '도로 중심', [Color(0xFFF5F0E8), Color(0xFFD9C9A0)], Color(0xFF1565C0)),
+  static const _options = <(MapStyleOption, String, IconData)>[
+    (MapStyleOption.standard, '스탠다드', Icons.map_outlined),
+    (MapStyleOption.streets, '스트리트', Icons.navigation_outlined),
+    (MapStyleOption.light, '라이트', Icons.wb_sunny_outlined),
+    (MapStyleOption.dark, '다크', Icons.nightlight_outlined),
+    (MapStyleOption.satellite, '위성', Icons.satellite_alt_outlined),
+    (MapStyleOption.outdoors, '아웃도어', Icons.terrain_outlined),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    return Container(
-      decoration: BoxDecoration(
-        color: context.sheetBg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      padding: EdgeInsets.fromLTRB(20, 14, 20, bottomInset + 24),
+    return GlassBottomSheet(
+      headerIcon: Icons.layers_rounded,
+      title: '지도 스타일',
+      subtitle: '오늘 어떤 풍경에 기억을 담아볼까요',
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 36,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 18),
-            decoration: BoxDecoration(
-              color: context.handleColor,
-              borderRadius: BorderRadius.circular(2),
+        children: _options.map((opt) {
+          final (style, name, icon) = opt;
+          final isActive = current == style;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _GlassStyleRow(
+              label: name,
+              icon: icon,
+              isActive: isActive,
+              onTap: () => onSelect(style),
             ),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '지도 스타일',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: context.labelColor,
-                letterSpacing: -0.3,
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+/// 지도 스타일 선택 행 — 글래스 톤 통일.
+class _GlassStyleRow extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _GlassStyleRow({
+    required this.label,
+    required this.icon,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final topA = isActive ? 0.65 : 0.15;
+    final midA = isActive ? 0.50 : 0.10;
+    final botA = isActive ? 0.35 : 0.07;
+    final borderA = isActive ? 0.85 : 0.20;
+    final borderW = isActive ? 1.5 : 1.0;
+    final blur = isActive ? 36.0 : 20.0;
+    final iconBoxA = isActive ? 0.40 : 0.10;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            height: 56,
+            padding: const EdgeInsets.fromLTRB(14, 0, 18, 0),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: topA),
+                  Colors.white.withValues(alpha: midA),
+                  Colors.white.withValues(alpha: botA),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: borderA),
+                width: borderW,
               ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '마음에 드는 스타일을 선택하세요',
-              style: TextStyle(fontSize: 13, color: context.subLabelColor),
-            ),
-          ),
-          const SizedBox(height: 20),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 0.85,
-            children: _options.map((opt) {
-              final (style, name, desc, bgColors, accentColor) = opt;
-              final isActive = current == style;
-              return GestureDetector(
-                onTap: () => onSelect(style),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: isActive ? TabTheme.map.accent : context.glassBorder,
-                      width: isActive ? 2.5 : 1,
-                    ),
-                    boxShadow: isActive
-                        ? [
-                            BoxShadow(
-                              color: TabTheme.map.accent.withValues(alpha: 0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : [],
+                    color: Colors.white.withValues(alpha: iconBoxA),
+                    shape: BoxShape.circle,
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(17),
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: bgColors,
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  bgColors.last.withValues(alpha: 0.0),
-                                  bgColors.last.withValues(alpha: 0.95),
-                                ],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    color: accentColor,
-                                    letterSpacing: -0.2,
-                                  ),
-                                ),
-                                Text(
-                                  desc,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: accentColor.withValues(alpha: 0.7),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (isActive)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Container(
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                color: TabTheme.map.accent,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: TabTheme.map.accent.withValues(alpha: 0.5),
-                                    blurRadius: 6,
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.check_rounded,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                      ],
+                  alignment: Alignment.center,
+                  child: Icon(icon, size: 16, color: Colors.white),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isActive ? FontWeight.w800 : FontWeight.w700,
+                      color: Colors.white,
+                      fontFamily: AppTokens.fontBody,
                     ),
                   ),
                 ),
-              );
-            }).toList(),
+                if (isActive)
+                  const Icon(Icons.check_rounded, size: 20, color: Colors.white),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }

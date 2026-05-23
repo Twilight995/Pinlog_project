@@ -8,6 +8,7 @@ import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/blob.dart';
 import '../../widgets/cosmic/category_palette.dart';
+import '../../widgets/feed/dogam_glow_background.dart';
 
 // ─── 뱃지 모델 ────────────────────────────────────────────────────────────────
 
@@ -347,22 +348,51 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: NestedScrollView(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: DogamGlowBackground()),
+          NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
             pinned: true,
-            expandedHeight: 140,
+            expandedHeight: 170,
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 56),
-              title: const Text(
-                '수집 도감',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                  fontFamily: AppTokens.fontDisplay,
+              background: SafeArea(
+                child: Padding(
+                  // bottom: TabBar(58) + 카피 아래 여유(14)
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 72),
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          '수집 도감',
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            fontFamily: AppTokens.fontDisplay,
+                            height: 1.0,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '기록의 결을 모아 한 권의 책으로',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            fontStyle: FontStyle.italic,
+                            color: Color(0xFFC8C1E0),
+                            fontFamily: AppTokens.fontBody,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -395,6 +425,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
           ],
         ),
       ),
+        ],
+      ),
     );
   }
 }
@@ -408,30 +440,20 @@ class _TabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 50,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: context.isDark
-            ? Colors.white.withValues(alpha: 0.05)
-            : Colors.black.withValues(alpha: 0.04),
+        color: const Color(0xFF1A1233),
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Row(
         children: [
           _TabChip(
-            icon: Icons.location_on_rounded,
             label: '핀 도감',
             isActive: controller.index == 0,
             onTap: () => controller.animateTo(0),
           ),
           _TabChip(
-            icon: Icons.military_tech_rounded,
             label: '칭호 도감',
             isActive: controller.index == 1,
             onTap: () => controller.animateTo(1),
@@ -443,13 +465,11 @@ class _TabBar extends StatelessWidget {
 }
 
 class _TabChip extends StatelessWidget {
-  final IconData icon;
   final String label;
   final bool isActive;
   final VoidCallback onTap;
 
   const _TabChip({
-    required this.icon,
     required this.label,
     required this.isActive,
     required this.onTap,
@@ -457,12 +477,6 @@ class _TabChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.isDark;
-    // 선택된 탭: 라이트모드=흰 카드 + 그림자, 다크모드=밝은 다크 카드 + 그림자
-    final activeCardColor = isDark ? AppColors.surface : Colors.white;
-    final activeTextColor = isDark ? Colors.white : AppColors.dark;
-    final inactiveTextColor = context.subLabelColor;
-
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -470,51 +484,28 @@ class _TabChip extends StatelessWidget {
           duration: const Duration(milliseconds: 260),
           curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
-            color: isActive ? activeCardColor : Colors.transparent,
+            gradient: isActive
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFFFFFF), Color(0xFFFFE5D0)],
+                  )
+                : null,
             borderRadius: BorderRadius.circular(20),
-            boxShadow: isActive
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(
-                        alpha: isDark ? 0.35 : 0.10,
-                      ),
-                      blurRadius: 10,
-                      offset: const Offset(3, 3),
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(
-                        alpha: isDark ? 0.18 : 0.05,
-                      ),
-                      blurRadius: 2,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : [],
+            border: isActive
+                ? Border.all(color: const Color(0xFFE04A1F), width: 1)
+                : null,
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    icon,
-                    key: ValueKey(isActive),
-                    size: 14,
-                    color: isActive ? activeTextColor : inactiveTextColor,
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-                    color: isActive ? activeTextColor : inactiveTextColor,
-                  ),
-                ),
-              ],
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
+              color: isActive
+                  ? const Color(0xFF1A0F3D)
+                  : const Color(0xFF7C6FAB),
+              fontFamily: AppTokens.fontBody,
             ),
           ),
         ),
@@ -1103,6 +1094,7 @@ class _BadgeDogamTab extends StatelessWidget {
                 (context, i) => _BadgeCard(
                   badge: earnedBadges[i],
                   earned: true,
+                  paletteIndex: i,
                   onTap: () => _showDetail(context, earnedBadges[i], true),
                 ),
                 childCount: earnedBadges.length,
@@ -1152,6 +1144,12 @@ class _TitleCard extends StatelessWidget {
     required this.pinCount,
   });
 
+  /// 칭호 레벨 (titles 인덱스 + 1).
+  int get _level {
+    final idx = _titles.indexOf(titleDef);
+    return idx < 0 ? 1 : idx + 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     final progress = nextTitle != null && nextTitle!.minPins > 0
@@ -1159,87 +1157,221 @@ class _TitleCard extends StatelessWidget {
               (nextTitle!.minPins - titleDef.minPins)
         : 1.0;
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            titleDef.color.withValues(alpha: 0.15),
-            titleDef.color.withValues(alpha: 0.05),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: SizedBox(
+        height: 170,
+        child: Stack(
+          children: [
+            // Apricot 그라디언트 베이스 (#FFE5D0 → #F2A66B)
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFFE5D0), Color(0xFFF2A66B)],
+                  ),
+                ),
+              ),
+            ),
+            // Blob 1 — 우상단 큰 오렌지 라디얼 (280×280, opacity 0.55)
+            Positioned(
+              left: 240,
+              top: 60,
+              child: Opacity(
+                opacity: 0.55,
+                child: Container(
+                  width: 280,
+                  height: 280,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [Color(0xFFE04A1F), Color(0xFFF2A66B)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Blob 2 — 작은 진한 오렌지 점
+            Positioned(
+              left: 260,
+              top: 110,
+              child: Opacity(
+                opacity: 0.55,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFF9A2B0E),
+                  ),
+                ),
+              ),
+            ),
+            // Sparkles (4개 흰 점)
+            Positioned(
+              left: 215,
+              top: 25,
+              child: Opacity(
+                opacity: 0.85,
+                child: _sparkle(8),
+              ),
+            ),
+            Positioned(
+              left: 285,
+              top: 50,
+              child: Opacity(opacity: 0.65, child: _sparkle(5)),
+            ),
+            Positioned(
+              left: 240,
+              top: 155,
+              child: Opacity(opacity: 0.75, child: _sparkle(6)),
+            ),
+            Positioned(
+              left: 340,
+              top: 115,
+              child: Opacity(opacity: 0.55, child: _sparkle(4)),
+            ),
+            // "현재 칭호" 펄 (좌상단)
+            Positioned(
+              left: 20,
+              top: 22,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE04A1F),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  '현재 칭호',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ),
+            ),
+            // (Lv chip — 큰 칭호명 옆 Row로 묶음, 아래 칭호명 Positioned 참조)
+            // ↗ Arrow 흰 원 버튼
+            Positioned(
+              right: 20,
+              top: 20,
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_outward_rounded,
+                  size: 20,
+                  color: Color(0xFF4A1A0A),
+                ),
+              ),
+            ),
+            // 큰 칭호명 + Lv 칩 (자연스럽게 옆에 붙음)
+            Positioned(
+              left: 20,
+              top: 62,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    titleDef.title,
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                      color: Color(0xFF4A1A0A),
+                      fontFamily: AppTokens.fontDisplay,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4A1A0A),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'Lv.$_level',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFFFE5D0),
+                          fontFamily: AppTokens.fontBody,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // 서브타이틀
+            Positioned(
+              left: 20,
+              top: 100,
+              child: Text(
+                titleDef.subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF7A3018),
+                  fontFamily: AppTokens.fontBody,
+                ),
+              ),
+            ),
+            // 진행률 바 — 트랙 (흰 50%)
+            Positioned(
+              left: 20,
+              top: 140,
+              child: Container(
+                width: 350,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            // 진행률 바 — Fill (다크)
+            Positioned(
+              left: 20,
+              top: 140,
+              child: Container(
+                width: (350 * progress.clamp(0.0, 1.0)).toDouble(),
+                height: 6,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A1A0A),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
           ],
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: titleDef.color.withValues(alpha: 0.25)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: titleDef.color,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              '현재 칭호',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            titleDef.title,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: titleDef.color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            titleDef.subtitle,
-            style: const TextStyle(fontSize: 13, color: AppColors.grey),
-          ),
-          if (nextTitle != null && toNext > 0) ...[
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '다음 칭호까지 여행 $toNext회',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.grey,
-                  ),
-                ),
-                Text(
-                  nextTitle!.title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: nextTitle!.color,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress.clamp(0.0, 1.0),
-                minHeight: 6,
-                backgroundColor: context.progressBg,
-                valueColor: AlwaysStoppedAnimation<Color>(titleDef.color),
-              ),
-            ),
-          ],
-        ],
+    );
+  }
+
+  Widget _sparkle(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
       ),
     );
   }
@@ -1297,68 +1429,92 @@ class _BadgeCard extends StatelessWidget {
   final bool earned;
   final VoidCallback onTap;
 
+  /// 카드 인덱스 — 파스텔 색 결정 (라벤더/블루/핑크 순환).
+  final int paletteIndex;
+
   const _BadgeCard({
     required this.badge,
     required this.earned,
     required this.onTap,
+    this.paletteIndex = 0,
   });
+
+  static const _pastels = <Color>[
+    Color(0xFFC7BFFF), // 라벤더
+    Color(0xFFBFE0FF), // 라이트블루
+    Color(0xFFF5C9E0), // 핑크
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final pastel = _pastels[paletteIndex % _pastels.length];
+
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: earned ? 1.0 : 0.45,
-        child: Container(
-          decoration: BoxDecoration(
-            color: context.cardBg,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: earned
-                ? [
-                    BoxShadow(
-                      color: badge.color.withValues(alpha: 0.15),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : [],
+      child: Container(
+        height: 120,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: earned
+                ? [Colors.white, pastel]
+                : const [Color(0xFF1B181F), Color(0xFF0D0B11)],
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 아이콘 — 활성: 48 흰 원 + 다크 아이콘 / 비활성: 25% 트로피
+            if (earned)
               Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: earned
-                      ? badge.color.withValues(alpha: 0.12)
-                      : context.emptyStateBg,
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
                   shape: BoxShape.circle,
                 ),
+                alignment: Alignment.center,
                 child: Icon(
-                  earned ? badge.icon : Icons.lock_rounded,
-                  size: 26,
-                  color: earned ? badge.color : AppColors.grey,
+                  badge.icon,
+                  size: 24,
+                  color: const Color(0xFF5B21B6),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  badge.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: earned ? context.labelColor : AppColors.grey,
+              )
+            else
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.25,
+                    child: Icon(
+                      Icons.emoji_events_rounded,
+                      size: 30,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
+            const SizedBox(height: 6),
+            Text(
+              badge.name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: earned
+                    ? const Color(0xFF1A0F3D)
+                    : const Color(0xFF9A8FC0),
+                fontFamily: AppTokens.fontBody,
+                height: 1.25,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -8,11 +8,17 @@ class GlassSheet extends StatelessWidget {
   final double? height;
   final VoidCallback? onClose;
 
+  /// 배경색 강제 — null이면 테마(`context.sheetBg`)를 따름.
+  /// 글래스 톤 컨텐츠(흰 텍스트) 시트는 다크 톤으로 고정해서
+  /// 밝은 지도 위에서도 가독성 확보.
+  final Color? backgroundColor;
+
   const GlassSheet({
     super.key,
     required this.child,
     this.height,
     this.onClose,
+    this.backgroundColor,
   });
 
   @override
@@ -28,7 +34,7 @@ class GlassSheet extends StatelessWidget {
           child: Container(
             height: height ?? 480,
             decoration: BoxDecoration(
-              color: context.sheetBg,
+              color: backgroundColor ?? context.sheetBg,
               borderRadius: BorderRadius.circular(28),
               border: Border.all(color: context.glassBorder),
               boxShadow: [
