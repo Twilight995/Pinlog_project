@@ -15,6 +15,7 @@ import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/blob.dart';
 import '../../widgets/cosmic/category_palette.dart';
+import '../../widgets/cosmic/cosmic_background.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Screen
@@ -57,9 +58,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final topRecent = recentPins.take(3).toList();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
+      backgroundColor: const Color(0xFF0A0612),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: CosmicBackground()),
+          CustomScrollView(
+          physics: const ClampingScrollPhysics(),
           slivers: [
             // ── 헤더: "프로필" + 감성 카피 (활동/도감과 동일 패턴) ───────────
             const SliverAppBar(
@@ -107,38 +111,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
 
-            // ── 컴팩트 헤더 (아바타 + Welcome + 편집 버튼) ─────────────────
+            // ── 통합 프로필 카드 (프로필 + 컬렉션 + 칭호/동행자) ─────────────
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                child: _CompactHeader(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: _UnifiedProfileCard(
                   nickname: profile.nickname,
                   photoPath: profile.photoPath,
-                  isEditing: _isEditing,
-                  onPhotoTap: _isEditing ? _pickPhoto : null,
-                  onEditTap: () => setState(() => _isEditing = !_isEditing),
-                ),
-              ),
-            ),
-
-            // ── 진행률 카드 (다크 글래스 코스믹) ────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                child: _ProgressGlassCard(
+                  onEditTap: () => _showEditSheet(context),
                   collected: collectedCategories,
                   total: totalCategories,
-                ),
-              ),
-            ),
-
-            // ── 미니 통계 칩 (칭호 / 함께한 사람) ───────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: _MiniStatRow(
+                  collectedShapes: AppConstants.pinShapes
+                      .where((s) => pins.any((p) => p.pinShape == s))
+                      .toSet(),
                   level: titleData.$1,
                   titleName: titleData.$2,
+                  toNext: _toNext(pins.length, titleData.$1),
                   companionsCount: companionsSet.length,
                 ),
               ),
@@ -193,6 +181,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SliverToBoxAdapter(child: SizedBox(height: 120)),
           ],
         ),
+        ],
+      ),
     );
   }
 
@@ -204,6 +194,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (pinCount >= 15) return (3, '기록 마니아');
     if (pinCount >= 5) return (2, '일상 탐색가');
     return (1, '핀 초보');
+  }
+
+  /// 현재 레벨에서 다음 레벨까지 남은 핀 수. 5레벨이면 0.
+  int _toNext(int pinCount, int level) {
+    const thresholds = [5, 15, 30, 60];
+    if (level >= 5) return 0;
+    return thresholds[level - 1] - pinCount;
   }
 
   Future<void> _pickPhoto() async {
@@ -1301,44 +1298,7 @@ class _SettingsSection extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-            child: Stack(
-              children: [
-                // 카드 안 컬러 글로우 (보라)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Container(
-                    width: 200,
-                    height: 200,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          const Color(0xFFA78BFA).withValues(alpha: 0.32),
-                          const Color(0xFFA78BFA).withValues(alpha: 0.0),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 180,
-                    height: 180,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          const Color(0xFF7C3AED).withValues(alpha: 0.22),
-                          const Color(0xFF7C3AED).withValues(alpha: 0.0),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Container(
+            child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -1385,8 +1345,6 @@ class _SettingsSection extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-              ],
             ),
           ),
         ),
@@ -1680,33 +1638,12 @@ class _MiniStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = gradient.last;
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       clipBehavior: Clip.antiAlias,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: Stack(
-          children: [
-            // 카드 안 컬러 글로우
-            Positioned(
-              left: 0,
-              top: 0,
-              child: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      accent.withValues(alpha: 0.45),
-                      accent.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Container(
+        child: Container(
               height: 80,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
@@ -1794,8 +1731,6 @@ class _MiniStatCard extends StatelessWidget {
                 ],
               ),
             ),
-          ],
-        ),
       ),
     );
   }
@@ -2071,6 +2006,471 @@ class _RecentCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 통합 프로필 카드 — 프로필 + 이번 컬렉션 + 칭호/동행자 (3섹션, divider 구분)
+// 펜 v3 디자인
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _UnifiedProfileCard extends StatelessWidget {
+  final String nickname;
+  final String? photoPath;
+  final VoidCallback onEditTap;
+  final int collected;
+  final int total;
+  final Set<String> collectedShapes;
+  final int level;
+  final String titleName;
+  final int toNext;
+  final int companionsCount;
+
+  const _UnifiedProfileCard({
+    required this.nickname,
+    required this.photoPath,
+    required this.onEditTap,
+    required this.collected,
+    required this.total,
+    required this.collectedShapes,
+    required this.level,
+    required this.titleName,
+    required this.toNext,
+    required this.companionsCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      clipBehavior: Clip.antiAlias,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withValues(alpha: 0.08),
+                Colors.white.withValues(alpha: 0.05),
+                Colors.white.withValues(alpha: 0.04),
+              ],
+              stops: const [0.0, 0.5, 1.0],
+            ),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              // ── 섹션 1: 프로필 헤더 ────────────────────────────────────
+              _ProfileSection(
+                nickname: nickname,
+                photoPath: photoPath,
+                onEditTap: onEditTap,
+              ),
+              _CardDivider(),
+              // ── 섹션 2: 이번 컬렉션 ───────────────────────────────────
+              _CollectionSection(
+                collected: collected,
+                total: total,
+                collectedShapes: collectedShapes,
+              ),
+              _CardDivider(),
+              // ── 섹션 3: 핀 레전드 | 함께한 사람 ────────────────────────
+              IntrinsicHeight(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _MiniCell(
+                        icon: Icons.emoji_events_rounded,
+                        label: '핀 레전드',
+                        value: '$level',
+                        unit: 'Lv',
+                        sub: toNext > 0
+                            ? '다음 레벨까지 $toNext핀'
+                            : '최고 레벨 달성',
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                    Expanded(
+                      child: _MiniCell(
+                        icon: Icons.people_alt_rounded,
+                        label: '함께한 사람',
+                        value: '$companionsCount',
+                        unit: '명',
+                        sub: companionsCount > 0
+                            ? '소중한 동행자들'
+                            : '아직 동행자 없음',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardDivider extends StatelessWidget {
+  const _CardDivider();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      color: Colors.white.withValues(alpha: 0.08),
+    );
+  }
+}
+
+class _ProfileSection extends StatelessWidget {
+  final String nickname;
+  final String? photoPath;
+  final VoidCallback onEditTap;
+
+  const _ProfileSection({
+    required this.nickname,
+    required this.photoPath,
+    required this.onEditTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          // 아바타 (56 라운드 사각)
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFC7BFFF), Color(0xFF8B5CF6)],
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: photoPath != null
+                  ? Image.file(File(photoPath!), fit: BoxFit.cover)
+                  : Center(
+                      child: Text(
+                        nickname.isNotEmpty
+                            ? nickname.substring(0, 1).toUpperCase()
+                            : 'P',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          fontFamily: AppTokens.fontDisplay,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          // 닉네임 + 카피
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  nickname,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    fontFamily: AppTokens.fontDisplay,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'welcome back · 오늘도 함께해요',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFFA8A1C8),
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 편집 버튼
+          GestureDetector(
+            onTap: onEditTap,
+            child: Container(
+              height: 40,
+              padding: const EdgeInsets.fromLTRB(12, 0, 14, 0),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.edit_outlined, size: 14, color: Colors.white),
+                  SizedBox(width: 6),
+                  Text(
+                    '편집',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontFamily: AppTokens.fontBody,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionSection extends StatelessWidget {
+  final int collected;
+  final int total;
+  final Set<String> collectedShapes;
+
+  const _CollectionSection({
+    required this.collected,
+    required this.total,
+    required this.collectedShapes,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = total > 0 ? collected / total : 0.0;
+    final percent = (progress * 100).round();
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 라벨 + N/N
+          Row(
+            children: [
+              const Text(
+                '이번 컬렉션',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                  fontFamily: AppTokens.fontBody,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$collected / $total',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF7C6FAB),
+                  fontFamily: AppTokens.fontBody,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // 큰 % + 카피
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$percent',
+                style: const TextStyle(
+                  fontSize: 56,
+                  fontWeight: FontWeight.w800,
+                  height: 1.0,
+                  color: Colors.white,
+                  fontFamily: AppTokens.fontDisplay,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '%',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    fontFamily: AppTokens.fontDisplay,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '잘 채워가고 있어요',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFA78BFA),
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          // 진행률 바
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Stack(
+              children: [
+                Container(
+                  height: 6,
+                  color: Colors.white.withValues(alpha: 0.10),
+                ),
+                FractionallySizedBox(
+                  widthFactor: progress.clamp(0.0, 1.0),
+                  child: Container(
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFA78BFA), Color(0xFFC7BFFF)],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 12개 카테고리 도트
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: AppConstants.pinShapes.map((shape) {
+              final unlocked = collectedShapes.contains(shape);
+              return Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: unlocked
+                      ? const Color(0xFFA78BFA)
+                      : Colors.white.withValues(alpha: 0.15),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniCell extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final String unit;
+  final String sub;
+
+  const _MiniCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.sub,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: const Color(0xFFA78BFA)),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                  fontFamily: AppTokens.fontBody,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  height: 1.0,
+                  color: Colors.white,
+                  fontFamily: AppTokens.fontDisplay,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  unit,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFA8A1C8),
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF7C6FAB),
+              fontFamily: AppTokens.fontBody,
             ),
           ),
         ],

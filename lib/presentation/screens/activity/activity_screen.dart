@@ -8,6 +8,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/category_palette.dart';
+import '../../widgets/cosmic/cosmic_background.dart';
 
 // ─── 화면 ─────────────────────────────────────────────────────────────────────
 
@@ -70,8 +71,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: CustomScrollView(
+      backgroundColor: const Color(0xFF0A0612),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: CosmicBackground()),
+          CustomScrollView(
+        physics: const ClampingScrollPhysics(),
         slivers: [
           // 앱바 — 도감 탭과 동일한 크기 + 감성 카피
           const SliverAppBar(
@@ -231,6 +236,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               ],
             ),
           ),
+        ],
+      ),
         ],
       ),
     );
@@ -431,33 +438,12 @@ class _GlassMiniStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = gradient.last;
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       clipBehavior: Clip.antiAlias,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: Stack(
-          children: [
-            // 카드 안 컬러 글로우 (글래스가 색을 머금게)
-            Positioned(
-              left: 0,
-              top: 0,
-              child: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      accent.withValues(alpha: 0.45),
-                      accent.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Container(
+        child: Container(
               height: 88,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
@@ -544,8 +530,6 @@ class _GlassMiniStatCard extends StatelessWidget {
             ],
           ),
         ),
-          ],
-        ),
       ),
     );
   }
@@ -618,44 +602,7 @@ class _ActivityHeatmap extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: Stack(
-          children: [
-            // 카드 안 컬러 글로우 (민트)
-            Positioned(
-              right: 0,
-              top: 0,
-              child: Container(
-                width: 220,
-                height: 220,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      const Color(0xFF5BB89E).withValues(alpha: 0.35),
-                      const Color(0xFF5BB89E).withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              bottom: 0,
-              child: Container(
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      const Color(0xFF3D8055).withValues(alpha: 0.25),
-                      const Color(0xFF3D8055).withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Container(
+        child: Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -845,8 +792,6 @@ class _ActivityHeatmap extends StatelessWidget {
             ],
           ),
         ),
-          ],
-        ),
       ),
     );
   }
@@ -871,121 +816,132 @@ class _DayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateLabel = '${day.month}월 ${day.day}일';
     final dowLabel = _weekdays[day.weekday];
-    // 최대 3개까지 표시 (카드 302h 안에 맞춤)
+    // 최대 3개 표시
     final displayPins = pins.take(3).toList();
-
-    // 오늘이면 민트 글로우, 다른 날엔 라벤더 글로우
-    final glowColor =
-        isToday ? const Color(0xFF5BB89E) : const Color(0xFFA78BFA);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
         height: 302,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 1. 카드 안 컬러 글로우 (Stack 영역 안)
-            Positioned(
-              right: 0,
-              top: 0,
-              child: Container(
-                width: 220,
-                height: 220,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      glowColor.withValues(alpha: 0.35),
-                      glowColor.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: 0.18),
+                  Colors.white.withValues(alpha: 0.12),
+                  Colors.white.withValues(alpha: 0.06),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.25),
+                width: 1,
               ),
             ),
-            Positioned(
-              left: 0,
-              bottom: 0,
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      glowColor.withValues(alpha: 0.22),
-                      glowColor.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // 2. 흰 글래스 + BackdropFilter (영역 전체 채움)
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.18),
-                        Colors.white.withValues(alpha: 0.12),
-                        Colors.white.withValues(alpha: 0.06),
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
-                    ),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 헤더
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // TODAY 펄 + 날짜 (또는 날짜만)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isToday) ...[
-                              Container(
-                                height: 18,
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF5BB89E),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: const Text(
-                                  'TODAY',
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1.2,
-                                    color: Color(0xFF0F2F23),
-                                    fontFamily: AppTokens.fontBody,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isToday) ...[
+                                Container(
+                                  height: 18,
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF5BB89E),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: const Text(
+                                    'TODAY',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.2,
+                                      color: Color(0xFF0F2F23),
+                                      fontFamily: AppTokens.fontBody,
+                                    ),
                                   ),
                                 ),
+                                const SizedBox(width: 6),
+                              ],
+                              Text(
+                                dateLabel,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFA8A1C8),
+                                  fontFamily: AppTokens.fontBody,
+                                ),
                               ),
-                              const SizedBox(width: 6),
                             ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            dowLabel,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              fontFamily: AppTokens.fontDisplay,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (pins.isNotEmpty)
+                      Container(
+                        height: 32,
+                        padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.white.withValues(alpha: 0.15),
+                              Colors.white.withValues(alpha: 0.07),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
                             Text(
-                              dateLabel,
+                              '${pins.length}',
                               style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                fontFamily: AppTokens.fontBody,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              '개의 순간',
+                              style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFFA8A1C8),
@@ -994,94 +950,29 @@ class _DayCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          dowLabel,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            fontFamily: AppTokens.fontDisplay,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // 카운트 칩
-                  if (pins.isNotEmpty)
-                    Container(
-                      height: 32,
-                      padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.white.withValues(alpha: 0.15),
-                            Colors.white.withValues(alpha: 0.07),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.25),
-                          width: 1,
-                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            '${pins.length}',
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              fontFamily: AppTokens.fontBody,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            '개의 순간',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFFA8A1C8),
-                              fontFamily: AppTokens.fontBody,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // 핀 리스트 또는 empty state
-              if (pins.isEmpty)
-                _EmptyDay(isToday: isToday)
-              else
-                Column(
-                  children: [
-                    for (var i = 0; i < displayPins.length; i++) ...[
-                      _PinRow(pin: displayPins[i]),
-                      if (i < displayPins.length - 1) const SizedBox(height: 10),
-                    ],
                   ],
                 ),
-            ],
-          ),
-        ),
-              ),
+                const SizedBox(height: 14),
+                if (pins.isEmpty)
+                  _EmptyDay(isToday: isToday)
+                else
+                  Column(
+                    children: [
+                      for (var i = 0; i < displayPins.length; i++) ...[
+                        _PinRow(pin: displayPins[i]),
+                        if (i < displayPins.length - 1) const SizedBox(height: 10),
+                      ],
+                    ],
+                  ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
-
-// ─── 핀 행 ─────────────────────────────────────────────────────────────────
 
 class _PinRow extends StatelessWidget {
   final PinModel pin;

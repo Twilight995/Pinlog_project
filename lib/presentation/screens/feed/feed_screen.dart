@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,7 +9,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/blob.dart';
-import '../../widgets/cosmic/category_palette.dart';
 import '../../widgets/feed/dogam_glow_background.dart';
 
 // ─── 뱃지 모델 ────────────────────────────────────────────────────────────────
@@ -831,104 +832,102 @@ class _PinCategoryCard extends StatelessWidget {
     return unlocked ? _buildUnlocked() : _buildLocked();
   }
 
-  Widget _buildUnlocked() {
-    final palette = CategoryPalette.forShape(shape);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [palette.start, palette.end],
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(emoji, style: const TextStyle(fontSize: 24)),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textOnPastel,
-                fontFamily: AppTokens.fontBody,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '$count곳',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: palette.accent,
-                fontFamily: AppTokens.fontBody,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildUnlocked() => _buildCard(unlocked: true);
+  Widget _buildLocked() => _buildCard(unlocked: false);
 
-  Widget _buildLocked() {
+  Widget _buildCard({required bool unlocked}) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppColors.bgLockedStart, AppColors.bgLockedEnd],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              // 수집현황 카드와 같은 라벤더 → 바이올렛 → 딥 바이올렛 색 흐름.
+              // 알파만 낮춰서 다크 배경 위에 은은하게 비치게.
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: unlocked
+                    ? [
+                        AppColors.pastelLavender.withValues(alpha: 0.28),
+                        AppColors.primary.withValues(alpha: 0.25),
+                        AppColors.primaryDark.withValues(alpha: 0.30),
+                      ]
+                    : [
+                        Colors.white.withValues(alpha: 0.02),
+                        Colors.white.withValues(alpha: 0.015),
+                      ],
+                stops: unlocked ? const [0.0, 0.5, 1.0] : const [0.0, 1.0],
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: unlocked
+                    ? AppColors.pastelLavender.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.04),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 이모지 원 — 라벤더 글래스 (unlocked일 때만 살짝 보라)
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: unlocked
+                        ? AppColors.pastelLavender.withValues(alpha: 0.12)
+                        : Colors.white.withValues(alpha: 0.03),
+                    border: Border.all(
+                      color: unlocked
+                          ? AppColors.pastelLavender.withValues(alpha: 0.30)
+                          : Colors.white.withValues(alpha: 0.05),
+                      width: 1,
+                    ),
+                  ),
+                  child: Center(
+                    child: Opacity(
+                      opacity: unlocked ? 1.0 : 0.3,
+                      child: Text(
+                        emoji,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: unlocked
+                        ? Colors.white
+                        : const Color(0xFF7C6FAB),
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  unlocked ? '$count곳' : '미수집',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: unlocked
+                        ? AppColors.pastelLavender
+                        : const Color(0xFF7C6FAB),
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // 고스트 이모지 (어떤 카테고리인지 흐릿하게 힌트)
-            Opacity(
-              opacity: 0.25,
-              child: Text(emoji, style: const TextStyle(fontSize: 32)),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF9A8FC0),
-                fontFamily: AppTokens.fontBody,
-              ),
-            ),
-            const SizedBox(height: 2),
-            const Text(
-              '미수집',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF6B5E94),
-                fontFamily: AppTokens.fontBody,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -1156,141 +1155,108 @@ class _TitleCard extends StatelessWidget {
         ? (pinCount - titleDef.minPins) /
               (nextTitle!.minPins - titleDef.minPins)
         : 1.0;
+    final progressClamped = progress.clamp(0.0, 1.0);
+    final toNext = nextTitle != null
+        ? (nextTitle!.minPins - pinCount).clamp(0, 9999)
+        : 0;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
-      child: SizedBox(
-        height: 170,
-        child: Stack(
-          children: [
-            // Apricot 그라디언트 베이스 (#FFE5D0 → #F2A66B)
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFFFFE5D0), Color(0xFFF2A66B)],
-                  ),
-                ),
-              ),
+      clipBehavior: Clip.antiAlias,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        child: Container(
+          height: 172,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          decoration: BoxDecoration(
+            // 수집현황 카드와 같은 라벤더 → 바이올렛 → 딥 바이올렛 색 흐름.
+            // 알파만 낮춰서 다크 배경 위에 은은하게 비치게.
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.pastelLavender.withValues(alpha: 0.28),
+                AppColors.primary.withValues(alpha: 0.25),
+                AppColors.primaryDark.withValues(alpha: 0.30),
+              ],
+              stops: const [0.0, 0.5, 1.0],
             ),
-            // Blob 1 — 우상단 큰 오렌지 라디얼 (280×280, opacity 0.55)
-            Positioned(
-              left: 240,
-              top: 60,
-              child: Opacity(
-                opacity: 0.55,
-                child: Container(
-                  width: 280,
-                  height: 280,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [Color(0xFFE04A1F), Color(0xFFF2A66B)],
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: AppColors.pastelLavender.withValues(alpha: 0.35),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── 1열: "현재 칭호" 칩 + 화살표 버튼 ─────────────────────
+              Row(
+                children: [
+                  // 라벤더 틴트 칩
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC7BFFF).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color:
+                            const Color(0xFFC7BFFF).withValues(alpha: 0.25),
+                        width: 1,
+                      ),
+                    ),
+                    child: const Text(
+                      '현재 칭호',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFC7BFFF),
+                        fontFamily: AppTokens.fontBody,
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ),
-            // Blob 2 — 작은 진한 오렌지 점
-            Positioned(
-              left: 260,
-              top: 110,
-              child: Opacity(
-                opacity: 0.55,
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFF9A2B0E),
+                  const Spacer(),
+                  // 글래스 화살표 버튼
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.08),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        width: 1,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.arrow_outward_rounded,
+                      size: 18,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
+                ],
               ),
-            ),
-            // Sparkles (4개 흰 점)
-            Positioned(
-              left: 215,
-              top: 25,
-              child: Opacity(
-                opacity: 0.85,
-                child: _sparkle(8),
-              ),
-            ),
-            Positioned(
-              left: 285,
-              top: 50,
-              child: Opacity(opacity: 0.65, child: _sparkle(5)),
-            ),
-            Positioned(
-              left: 240,
-              top: 155,
-              child: Opacity(opacity: 0.75, child: _sparkle(6)),
-            ),
-            Positioned(
-              left: 340,
-              top: 115,
-              child: Opacity(opacity: 0.55, child: _sparkle(4)),
-            ),
-            // "현재 칭호" 펄 (좌상단)
-            Positioned(
-              left: 20,
-              top: 22,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE04A1F),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Text(
-                  '현재 칭호',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    fontFamily: AppTokens.fontBody,
-                  ),
-                ),
-              ),
-            ),
-            // (Lv chip — 큰 칭호명 옆 Row로 묶음, 아래 칭호명 Positioned 참조)
-            // ↗ Arrow 흰 원 버튼
-            Positioned(
-              right: 20,
-              top: 20,
-              child: Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.arrow_outward_rounded,
-                  size: 20,
-                  color: Color(0xFF4A1A0A),
-                ),
-              ),
-            ),
-            // 큰 칭호명 + Lv 칩 (자연스럽게 옆에 붙음)
-            Positioned(
-              left: 20,
-              top: 62,
-              child: Row(
+              const SizedBox(height: 14),
+              // ── 2열: 칭호명 + Lv 칩 ─────────────────────────────────
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    titleDef.title,
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      height: 1.1,
-                      color: Color(0xFF4A1A0A),
-                      fontFamily: AppTokens.fontDisplay,
+                  Flexible(
+                    child: Text(
+                      titleDef.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        height: 1.1,
+                        color: Colors.white,
+                        fontFamily: AppTokens.fontDisplay,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1302,15 +1268,19 @@ class _TitleCard extends StatelessWidget {
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4A1A0A),
+                        color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          width: 1,
+                        ),
                       ),
                       child: Text(
                         'Lv.$_level',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFFFFE5D0),
+                          color: Color(0xFFC7BFFF),
                           fontFamily: AppTokens.fontBody,
                         ),
                       ),
@@ -1318,60 +1288,51 @@ class _TitleCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            // 서브타이틀
-            Positioned(
-              left: 20,
-              top: 100,
-              child: Text(
-                titleDef.subtitle,
+              const SizedBox(height: 6),
+              // ── 3열: 서브타이틀 (다음 칭호까지) ──────────────────────
+              Text(
+                nextTitle != null
+                    ? '핀 $pinCount개 · 다음 칭호까지 $toNext핀'
+                    : '핀 $pinCount개 · 최고 칭호 달성',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF7A3018),
+                  color: Color(0xFFA8A1C8),
                   fontFamily: AppTokens.fontBody,
                 ),
               ),
-            ),
-            // 진행률 바 — 트랙 (흰 50%)
-            Positioned(
-              left: 20,
-              top: 140,
-              child: Container(
-                width: 350,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(4),
+              const Spacer(),
+              // ── 4열: 진행률 바 ────────────────────────────────────────
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: Stack(
+                  children: [
+                    Container(
+                      height: 6,
+                      color: Colors.white.withValues(alpha: 0.10),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: progressClamped.toDouble(),
+                      child: Container(
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xFFA78BFA),
+                              Color(0xFFC7BFFF),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            // 진행률 바 — Fill (다크)
-            Positioned(
-              left: 20,
-              top: 140,
-              child: Container(
-                width: (350 * progress.clamp(0.0, 1.0)).toDouble(),
-                height: 6,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4A1A0A),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
-  }
-
-  Widget _sparkle(double size) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white,
       ),
     );
   }
@@ -1439,82 +1400,94 @@ class _BadgeCard extends StatelessWidget {
     this.paletteIndex = 0,
   });
 
-  static const _pastels = <Color>[
-    Color(0xFFC7BFFF), // 라벤더
-    Color(0xFFBFE0FF), // 라이트블루
-    Color(0xFFF5C9E0), // 핑크
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final pastel = _pastels[paletteIndex % _pastels.length];
-
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        height: 120,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: earned
-                ? [Colors.white, pastel]
-                : const [Color(0xFF1B181F), Color(0xFF0D0B11)],
-          ),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // 아이콘 — 활성: 48 흰 원 + 다크 아이콘 / 비활성: 25% 트로피
-            if (earned)
-              Container(
-                width: 48,
-                height: 48,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  badge.icon,
-                  size: 24,
-                  color: const Color(0xFF5B21B6),
-                ),
-              )
-            else
-              SizedBox(
-                width: 48,
-                height: 48,
-                child: Center(
-                  child: Opacity(
-                    opacity: 0.25,
-                    child: Icon(
-                      Icons.emoji_events_rounded,
-                      size: 30,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            height: 120,
+            padding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 14,
+            ),
+            decoration: BoxDecoration(
+              // 수집현황 카드와 같은 라벤더 → 바이올렛 → 딥 바이올렛 색 흐름.
+              // 알파만 낮춰서 다크 배경 위에 은은하게 비치게.
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: earned
+                    ? [
+                        AppColors.pastelLavender.withValues(alpha: 0.28),
+                        AppColors.primary.withValues(alpha: 0.25),
+                        AppColors.primaryDark.withValues(alpha: 0.30),
+                      ]
+                    : [
+                        Colors.white.withValues(alpha: 0.02),
+                        Colors.white.withValues(alpha: 0.015),
+                      ],
+                stops: earned ? const [0.0, 0.5, 1.0] : const [0.0, 1.0],
               ),
-            const SizedBox(height: 6),
-            Text(
-              badge.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
                 color: earned
-                    ? const Color(0xFF1A0F3D)
-                    : const Color(0xFF9A8FC0),
-                fontFamily: AppTokens.fontBody,
-                height: 1.25,
+                    ? AppColors.pastelLavender.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.04),
+                width: 1,
               ),
             ),
-          ],
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 아이콘 원 — 라벤더 글래스 (활성일 때만 라벤더 틴트)
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: earned
+                        ? AppColors.pastelLavender.withValues(alpha: 0.12)
+                        : Colors.white.withValues(alpha: 0.03),
+                    border: Border.all(
+                      color: earned
+                          ? AppColors.pastelLavender.withValues(alpha: 0.30)
+                          : Colors.white.withValues(alpha: 0.05),
+                      width: 1,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    earned ? badge.icon : Icons.lock_outline_rounded,
+                    size: 20,
+                    color: earned
+                        ? AppColors.pastelLavender
+                        : const Color(0xFF7C6FAB),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  badge.name,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: earned
+                        ? Colors.white
+                        : const Color(0xFF7C6FAB),
+                    fontFamily: AppTokens.fontBody,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
