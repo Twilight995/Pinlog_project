@@ -7,58 +7,70 @@ class GlassSheet extends StatelessWidget {
   final Widget child;
   final double? height;
   final VoidCallback? onClose;
+  final bool centered;
+  final Alignment alignment;
 
   const GlassSheet({
     super.key,
     required this.child,
     this.height,
     this.onClose,
+    this.centered = false,
+    this.alignment = Alignment.center,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 100,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-          child: Container(
-            height: height ?? 480,
-            decoration: BoxDecoration(
-              color: context.sheetBg,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: context.glassBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.07),
-                  blurRadius: 40,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
+    final size = MediaQuery.of(context).size;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    final card = ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: centered
+                ? size.height * 0.65
+                : (height ?? size.height * 0.72),
+          ),
+          decoration: BoxDecoration(
+            color: context.sheetBg,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: context.glassBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 40,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Material(
+            type: MaterialType.transparency,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 드래그 핸들
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Container(
-                    width: 40,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: context.handleColor,
-                      borderRadius: BorderRadius.circular(3),
+                if (!centered)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Container(
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: context.handleColor,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
                   ),
-                ),
-                // 닫기 버튼
                 if (onClose != null)
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 15, top: 0),
+                  Padding(
+                    padding: EdgeInsets.only(
+                      top: centered ? 14 : 0,
+                      right: 15,
+                    ),
+                    child: Align(
+                      alignment: Alignment.topRight,
                       child: GestureDetector(
                         onTap: onClose,
                         child: Container(
@@ -73,8 +85,7 @@ class GlassSheet extends StatelessWidget {
                       ),
                     ),
                   ),
-                // 내용
-                Expanded(
+                Flexible(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                     child: child,
@@ -85,6 +96,27 @@ class GlassSheet extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    if (centered) {
+      return Align(
+        alignment: alignment,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            bottom: alignment.y > 0 ? bottomInset + 16 : 0,
+          ),
+          child: card,
+        ),
+      );
+    }
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: bottomInset + 72,
+      child: card,
     );
   }
 }

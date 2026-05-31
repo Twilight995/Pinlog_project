@@ -1,0 +1,1262 @@
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../application/providers/auth_provider.dart';
+import '../main_shell.dart';
+
+class OnboardingScreen extends ConsumerStatefulWidget {
+  final String? initialNickname;
+  final String? initialAvatarUrl;
+
+  const OnboardingScreen({
+    super.key,
+    this.initialNickname,
+    this.initialAvatarUrl,
+  });
+
+  @override
+  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
+    with TickerProviderStateMixin {
+  int _step = 0;
+
+  // Step 1 — 닉네임
+  final _nicknameCtrl = TextEditingController();
+  final _nicknameFocus = FocusNode();
+  final _formKey = GlobalKey<FormState>();
+
+  // Step 2 — 프로필 사진
+  File? _avatarFile;
+  String? _uploadedAvatarUrl;
+  bool _uploadingAvatar = false;
+
+  // Step 3 — 전화번호
+  final _phoneCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
+  bool _otpSent = false;
+  bool _phoneVerified = false;
+  bool _sendingOtp = false;
+  bool _verifyingOtp = false;
+  String? _phoneError;
+  String? _otpError;
+
+  bool _completing = false;
+
+  late final AnimationController _slideCtrl;
+  late final AnimationController _enterCtrl;
+  late final Animation<double> _enterFade;
+
+  // slide direction: 1 = next (left), -1 = back (right)
+  // ignore: unused_field
+  int _slideDir = 1;
+  int _nextStep = 0;
+  late Animation<Offset> _slideOut;
+  late Animation<Offset> _slideIn;
+  late Animation<double> _fadeOut;
+  late Animation<double> _fadeIn;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialNickname != null) {
+      _nicknameCtrl.text = widget.initialNickname!;
+    }
+
+    _enterCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _enterFade = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
+    _enterCtrl.forward();
+
+    _slideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    // 기본값 — 애니메이션 전 정적 상태
+    _slideOut = Tween<Offset>(begin: Offset.zero, end: const Offset(-0.3, 0))
+        .animate(_slideCtrl);
+    _slideIn = Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+        .animate(_slideCtrl);
+    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(_slideCtrl);
+    _fadeIn  = Tween<double>(begin: 0.0, end: 1.0).animate(_slideCtrl);
+  }
+
+  @override
+  void dispose() {
+    _enterCtrl.dispose();
+    _slideCtrl.dispose();
+    _nicknameCtrl.dispose();
+    _nicknameFocus.dispose();
+    _phoneCtrl.dispose();
+    _otpCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _animateToStep(int next, {int dir = 1}) async {
+    _slideDir = dir;
+    _nextStep = next;
+
+    // 두 화면 동일 curve → "push" 효과 (충돌 없음)
+    const curve = Curves.easeInOutCubic;
+    _slideOut = Tween<Offset>(
+      begin: Offset.zero,
+      end: Offset(-0.28 * dir, 0), // 살짝 밀려나는 느낌
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: curve));
+    _slideIn = Tween<Offset>(
+      begin: Offset(1.0 * dir, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: curve));
+
+    // 이전 화면 fade-out → 잔상 제거
+    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _slideCtrl,
+        curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
+      ),
+    );
+    _fadeIn = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _slideCtrl,
+        curve: const Interval(0.35, 1.0, curve: Curves.easeIn),
+      ),
+    );
+
+    _slideCtrl.reset();
+    await _slideCtrl.forward();
+    if (!mounted) return;
+    setState(() => _step = next);
+    _slideCtrl.reset();
+  }
+
+  // ── Step 1 → Step 2 ─────────────────────────────────────────────────────────
+  void _onNextFromNickname() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    HapticFeedback.lightImpact();
+    _nicknameFocus.unfocus();
+    _animateToStep(1);
+  }
+
+  // ── Step 2 → Step 3 ─────────────────────────────────────────────────────────
+  Future<void> _pickAvatar() async {
+    HapticFeedback.lightImpact();
+    final picker = ImagePicker();
+    final source = await _showImageSourceSheet();
+    if (source == null) return;
+
+    final file = await picker.pickImage(source: source, imageQuality: 80);
+    if (file == null) return;
+
+    setState(() {
+      _avatarFile = File(file.path);
+      _uploadingAvatar = true;
+    });
+
+    try {
+      final uid = Supabase.instance.client.auth.currentUser?.id ?? 'tmp';
+      final ext = file.path.split('.').last.toLowerCase();
+      final path = '$uid.$ext';
+      final bytes = await _avatarFile!.readAsBytes();
+
+      await Supabase.instance.client.storage.from('avatars').uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(upsert: true, contentType: 'image/$ext'),
+          );
+
+      final url = Supabase.instance.client.storage
+          .from('avatars')
+          .getPublicUrl(path);
+      if (mounted) setState(() => _uploadedAvatarUrl = url);
+    } catch (_) {
+      // Storage 버킷이 없어도 로컬 파일을 미리보기로만 표시
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
+  Future<ImageSource?> _showImageSourceSheet() async {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1232),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined,
+                  color: Color(0xFF8B5CF6)),
+              title: const Text('갤러리에서 선택',
+                  style: TextStyle(color: Colors.white, fontFamily: 'Pretendard')),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined,
+                  color: Color(0xFF8B5CF6)),
+              title: const Text('카메라로 촬영',
+                  style: TextStyle(color: Colors.white, fontFamily: 'Pretendard')),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _onNextFromAvatar() {
+    HapticFeedback.lightImpact();
+    _animateToStep(2);
+  }
+
+  // ── Step 3 — 전화번호 OTP ────────────────────────────────────────────────────
+  Future<void> _sendOtp() async {
+    final phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) {
+      setState(() => _phoneError = '전화번호를 입력해주세요');
+      return;
+    }
+    HapticFeedback.lightImpact();
+    setState(() {
+      _sendingOtp = true;
+      _phoneError = null;
+    });
+
+    // 화면 표시 포맷(010-XXXX-XXXX) → E.164 (+821012345678)
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    final e164 = digits.startsWith('0') ? '+82${digits.substring(1)}' : '+$digits';
+
+    final err =
+        await ref.read(pinlogAuthProvider.notifier).sendPhoneOtp(e164);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() {
+        _phoneError = err;
+        _sendingOtp = false;
+      });
+    } else {
+      setState(() {
+        _otpSent = true;
+        _sendingOtp = false;
+      });
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final phone = _phoneCtrl.text.trim();
+    final otp = _otpCtrl.text.trim();
+    if (otp.length < 6) {
+      setState(() => _otpError = '6자리 인증번호를 입력해주세요');
+      return;
+    }
+    HapticFeedback.lightImpact();
+    setState(() {
+      _verifyingOtp = true;
+      _otpError = null;
+    });
+
+    final err =
+        await ref.read(pinlogAuthProvider.notifier).verifyPhoneOtp(phone, otp);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() {
+        _otpError = err;
+        _verifyingOtp = false;
+      });
+    } else {
+      setState(() {
+        _phoneVerified = true;
+        _verifyingOtp = false;
+      });
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  // ── 온보딩 완료 ───────────────────────────────────────────────────────────────
+  Future<void> _complete({String? phone}) async {
+    if (_completing) return;
+    HapticFeedback.lightImpact();
+    setState(() => _completing = true);
+
+    await ref.read(pinlogAuthProvider.notifier).completeOnboarding(
+          nickname: _nicknameCtrl.text.trim(),
+          avatarUrl: _uploadedAvatarUrl ?? widget.initialAvatarUrl,
+          phone: phone,
+        );
+  }
+
+  void _navigateToMain() {
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      PageRouteBuilder(
+        pageBuilder: (ctx, a1, a2) => const MainShell(),
+        transitionsBuilder: (ctx, anim, a2, child) {
+          final fade = CurvedAnimation(
+            parent: anim,
+            curve: const Interval(0.0, 0.72, curve: Curves.easeOut),
+          );
+          final scale = Tween<double>(begin: 0.94, end: 1.0).animate(
+            CurvedAnimation(parent: anim, curve: Curves.easeOutQuart),
+          );
+          return FadeTransition(
+            opacity: fade,
+            child: ScaleTransition(scale: scale, child: child),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 680),
+      ),
+      (_) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(pinlogAuthProvider, (prev, next) {
+      if (prev?.isNewUser == true && !next.isNewUser && next.isAuthenticated) {
+        _navigateToMain();
+      }
+    });
+
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0D0820),
+        body: Stack(
+          children: [
+            Positioned.fill(child: CustomPaint(painter: _OnboardingBgPainter())),
+            SafeArea(
+              child: FadeTransition(
+                opacity: _enterFade,
+                child: Column(
+                  children: [
+                    _TopBar(step: _step),
+                    Expanded(
+                      child: AnimatedBuilder(
+                        animation: _slideCtrl,
+                        builder: (_, child) {
+                          if (_slideCtrl.isAnimating) {
+                            return Stack(
+                              children: [
+                                // 이전 화면: 살짝 밀리며 fade-out
+                                FadeTransition(
+                                  opacity: _fadeOut,
+                                  child: SlideTransition(
+                                    position: _slideOut,
+                                    child: _StepContent(
+                                      step: _step,
+                                      nicknameCtrl: _nicknameCtrl,
+                                      nicknameFocus: _nicknameFocus,
+                                      formKey: _formKey,
+                                      avatarFile: _avatarFile,
+                                      uploadingAvatar: _uploadingAvatar,
+                                      uploadedAvatarUrl: _uploadedAvatarUrl,
+                                      initialAvatarUrl: widget.initialAvatarUrl,
+                                      phoneCtrl: _phoneCtrl,
+                                      otpCtrl: _otpCtrl,
+                                      otpSent: _otpSent,
+                                      phoneVerified: _phoneVerified,
+                                      sendingOtp: _sendingOtp,
+                                      verifyingOtp: _verifyingOtp,
+                                      phoneError: _phoneError,
+                                      otpError: _otpError,
+                                      completing: _completing,
+                                      onPickAvatar: _pickAvatar,
+                                      onNextNickname: _onNextFromNickname,
+                                      onNextAvatar: _onNextFromAvatar,
+                                      onSendOtp: _sendOtp,
+                                      onVerifyOtp: _verifyOtp,
+                                      onComplete: _complete,
+                                      bottomPad: bottomPad,
+                                    ),
+                                  ),
+                                ),
+                                // 새 화면: 오른쪽에서 slide-in + fade-in
+                                FadeTransition(
+                                  opacity: _fadeIn,
+                                  child: SlideTransition(
+                                    position: _slideIn,
+                                    child: _StepContent(
+                                      step: _nextStep,
+                                      nicknameCtrl: _nicknameCtrl,
+                                      nicknameFocus: _nicknameFocus,
+                                      formKey: _formKey,
+                                      avatarFile: _avatarFile,
+                                      uploadingAvatar: _uploadingAvatar,
+                                      uploadedAvatarUrl: _uploadedAvatarUrl,
+                                      initialAvatarUrl: widget.initialAvatarUrl,
+                                      phoneCtrl: _phoneCtrl,
+                                      otpCtrl: _otpCtrl,
+                                      otpSent: _otpSent,
+                                      phoneVerified: _phoneVerified,
+                                      sendingOtp: _sendingOtp,
+                                      verifyingOtp: _verifyingOtp,
+                                      phoneError: _phoneError,
+                                      otpError: _otpError,
+                                      completing: _completing,
+                                      onPickAvatar: _pickAvatar,
+                                      onNextNickname: _onNextFromNickname,
+                                      onNextAvatar: _onNextFromAvatar,
+                                      onSendOtp: _sendOtp,
+                                      onVerifyOtp: _verifyOtp,
+                                      onComplete: _complete,
+                                      bottomPad: bottomPad,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                          return _StepContent(
+                            step: _step,
+                            nicknameCtrl: _nicknameCtrl,
+                            nicknameFocus: _nicknameFocus,
+                            formKey: _formKey,
+                            avatarFile: _avatarFile,
+                            uploadingAvatar: _uploadingAvatar,
+                            uploadedAvatarUrl: _uploadedAvatarUrl,
+                            initialAvatarUrl: widget.initialAvatarUrl,
+                            phoneCtrl: _phoneCtrl,
+                            otpCtrl: _otpCtrl,
+                            otpSent: _otpSent,
+                            phoneVerified: _phoneVerified,
+                            sendingOtp: _sendingOtp,
+                            verifyingOtp: _verifyingOtp,
+                            phoneError: _phoneError,
+                            otpError: _otpError,
+                            completing: _completing,
+                            onPickAvatar: _pickAvatar,
+                            onNextNickname: _onNextFromNickname,
+                            onNextAvatar: _onNextFromAvatar,
+                            onSendOtp: _sendOtp,
+                            onVerifyOtp: _verifyOtp,
+                            onComplete: _complete,
+                            bottomPad: bottomPad,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 상단 진행 바 ──────────────────────────────────────────────────────────────
+
+class _TopBar extends StatelessWidget {
+  final int step;
+  const _TopBar({required this.step});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(3, (i) {
+              final active = i <= step;
+              final current = i == step;
+              return Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  height: 3,
+                  margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    color: active
+                        ? const Color(0xFF8B5CF6)
+                        : Colors.white.withValues(alpha: 0.12),
+                    boxShadow: current
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFF8B5CF6)
+                                  .withValues(alpha: 0.5),
+                              blurRadius: 6,
+                            )
+                          ]
+                        : null,
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${step + 1} / 3',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withValues(alpha: 0.35),
+              fontFamily: 'Pretendard',
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 단계별 콘텐츠 위젯 ──────────────────────────────────────────────────────────
+
+class _StepContent extends StatelessWidget {
+  final int step;
+  final TextEditingController nicknameCtrl;
+  final FocusNode nicknameFocus;
+  final GlobalKey<FormState> formKey;
+  final File? avatarFile;
+  final bool uploadingAvatar;
+  final String? uploadedAvatarUrl;
+  final String? initialAvatarUrl;
+  final TextEditingController phoneCtrl;
+  final TextEditingController otpCtrl;
+  final bool otpSent;
+  final bool phoneVerified;
+  final bool sendingOtp;
+  final bool verifyingOtp;
+  final String? phoneError;
+  final String? otpError;
+  final bool completing;
+  final VoidCallback onPickAvatar;
+  final VoidCallback onNextNickname;
+  final VoidCallback onNextAvatar;
+  final VoidCallback onSendOtp;
+  final VoidCallback onVerifyOtp;
+  final void Function({String? phone}) onComplete;
+  final double bottomPad;
+
+  const _StepContent({
+    required this.step,
+    required this.nicknameCtrl,
+    required this.nicknameFocus,
+    required this.formKey,
+    required this.avatarFile,
+    required this.uploadingAvatar,
+    required this.uploadedAvatarUrl,
+    required this.initialAvatarUrl,
+    required this.phoneCtrl,
+    required this.otpCtrl,
+    required this.otpSent,
+    required this.phoneVerified,
+    required this.sendingOtp,
+    required this.verifyingOtp,
+    required this.phoneError,
+    required this.otpError,
+    required this.completing,
+    required this.onPickAvatar,
+    required this.onNextNickname,
+    required this.onNextAvatar,
+    required this.onSendOtp,
+    required this.onVerifyOtp,
+    required this.onComplete,
+    required this.bottomPad,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (step) {
+      0 => _NicknameStep(
+          ctrl: nicknameCtrl,
+          focus: nicknameFocus,
+          formKey: formKey,
+          onNext: onNextNickname,
+          bottomPad: bottomPad,
+        ),
+      1 => _AvatarStep(
+          avatarFile: avatarFile,
+          uploadingAvatar: uploadingAvatar,
+          uploadedAvatarUrl: uploadedAvatarUrl,
+          initialAvatarUrl: initialAvatarUrl,
+          onPick: onPickAvatar,
+          onNext: onNextAvatar,
+          onSkip: onNextAvatar,
+          bottomPad: bottomPad,
+        ),
+      _ => _PhoneStep(
+          phoneCtrl: phoneCtrl,
+          otpCtrl: otpCtrl,
+          otpSent: otpSent,
+          phoneVerified: phoneVerified,
+          sendingOtp: sendingOtp,
+          verifyingOtp: verifyingOtp,
+          phoneError: phoneError,
+          otpError: otpError,
+          completing: completing,
+          onSendOtp: onSendOtp,
+          onVerifyOtp: onVerifyOtp,
+          onComplete: onComplete,
+          bottomPad: bottomPad,
+        ),
+    };
+  }
+}
+
+// ─── Step 1: 닉네임 ────────────────────────────────────────────────────────────
+
+class _NicknameStep extends StatelessWidget {
+  final TextEditingController ctrl;
+  final FocusNode focus;
+  final GlobalKey<FormState> formKey;
+  final VoidCallback onNext;
+  final double bottomPad;
+
+  const _NicknameStep({
+    required this.ctrl,
+    required this.focus,
+    required this.formKey,
+    required this.onNext,
+    required this.bottomPad,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(24, 32, 24, bottomPad + 24),
+      child: Form(
+        key: formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _StepHeader(
+              icon: Icons.person_outline_rounded,
+              title: '닉네임을 정해주세요',
+              subtitle: '언제든지 변경할 수 있어요',
+            ),
+            const SizedBox(height: 36),
+            _OnboardingField(
+              controller: ctrl,
+              focusNode: focus,
+              hint: '2자 이상 입력',
+              icon: Icons.badge_outlined,
+              validator: (v) {
+                if (v == null || v.trim().length < 2) return '2자 이상 입력해주세요';
+                return null;
+              },
+            ),
+            const SizedBox(height: 32),
+            _PrimaryButton(label: '다음', onTap: onNext),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Step 2: 프로필 사진 ────────────────────────────────────────────────────────
+
+class _AvatarStep extends StatelessWidget {
+  final File? avatarFile;
+  final bool uploadingAvatar;
+  final String? uploadedAvatarUrl;
+  final String? initialAvatarUrl;
+  final VoidCallback onPick;
+  final VoidCallback onNext;
+  final VoidCallback onSkip;
+  final double bottomPad;
+
+  const _AvatarStep({
+    required this.avatarFile,
+    required this.uploadingAvatar,
+    required this.uploadedAvatarUrl,
+    required this.initialAvatarUrl,
+    required this.onPick,
+    required this.onNext,
+    required this.onSkip,
+    required this.bottomPad,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    ImageProvider? preview;
+    if (avatarFile != null) {
+      preview = FileImage(avatarFile!);
+    } else if (initialAvatarUrl != null) {
+      preview = NetworkImage(initialAvatarUrl!);
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 32, 24, bottomPad + 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _StepHeader(
+            icon: Icons.camera_alt_outlined,
+            title: '프로필 사진을\n설정해주세요',
+            subtitle: '나중에 설정할 수도 있어요',
+          ),
+          const SizedBox(height: 40),
+          Center(
+            child: GestureDetector(
+              onTap: onPick,
+              child: Stack(
+                children: [
+                  Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.06),
+                      border: Border.all(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+                        width: 2,
+                      ),
+                      image: preview != null
+                          ? DecorationImage(image: preview, fit: BoxFit.cover)
+                          : null,
+                    ),
+                    child: preview == null
+                        ? Icon(
+                            Icons.person_rounded,
+                            size: 48,
+                            color: Colors.white.withValues(alpha: 0.25),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF8B5CF6), Color(0xFFD946EF)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF8B5CF6)
+                                .withValues(alpha: 0.4),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: uploadingAvatar
+                          ? const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.add_rounded,
+                              size: 20,
+                              color: Colors.white,
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          _PrimaryButton(
+            label: avatarFile != null ? '다음' : '다음',
+            onTap: onNext,
+          ),
+          const SizedBox(height: 14),
+          Center(
+            child: GestureDetector(
+              onTap: onSkip,
+              child: Text(
+                '건너뛰기',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontFamily: 'Pretendard',
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Step 3: 전화번호 ──────────────────────────────────────────────────────────
+
+class _PhoneStep extends StatelessWidget {
+  final TextEditingController phoneCtrl;
+  final TextEditingController otpCtrl;
+  final bool otpSent;
+  final bool phoneVerified;
+  final bool sendingOtp;
+  final bool verifyingOtp;
+  final String? phoneError;
+  final String? otpError;
+  final bool completing;
+  final VoidCallback onSendOtp;
+  final VoidCallback onVerifyOtp;
+  final void Function({String? phone}) onComplete;
+  final double bottomPad;
+
+  const _PhoneStep({
+    required this.phoneCtrl,
+    required this.otpCtrl,
+    required this.otpSent,
+    required this.phoneVerified,
+    required this.sendingOtp,
+    required this.verifyingOtp,
+    required this.phoneError,
+    required this.otpError,
+    required this.completing,
+    required this.onSendOtp,
+    required this.onVerifyOtp,
+    required this.onComplete,
+    required this.bottomPad,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(24, 32, 24, bottomPad + 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _StepHeader(
+            icon: Icons.phone_outlined,
+            title: '전화번호를\n인증해주세요',
+            subtitle: '안전한 계정 보호를 위해',
+          ),
+          const SizedBox(height: 36),
+
+          // 전화번호 입력
+          if (!phoneVerified) ...[
+            _OnboardingField(
+              controller: phoneCtrl,
+              hint: '010-0000-0000',
+              icon: Icons.phone_outlined,
+              keyboardType: TextInputType.phone,
+              enabled: !otpSent,
+              inputFormatters: [_KoreanPhoneFormatter()],
+            ),
+            if (phoneError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  phoneError!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFFF6B6B),
+                    fontFamily: 'Pretendard',
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            if (!otpSent)
+              _PrimaryButton(
+                label: '인증번호 발송',
+                onTap: onSendOtp,
+                isLoading: sendingOtp,
+              ),
+
+            // OTP 입력 (발송 후 표시)
+            if (otpSent) ...[
+              const SizedBox(height: 20),
+              Text(
+                '인증번호',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.48),
+                  fontFamily: 'Pretendard',
+                ),
+              ),
+              const SizedBox(height: 7),
+              _OnboardingField(
+                controller: otpCtrl,
+                hint: '6자리 인증번호',
+                icon: Icons.lock_outline_rounded,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+              ),
+              if (otpError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    otpError!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFFFF6B6B),
+                      fontFamily: 'Pretendard',
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              _PrimaryButton(
+                label: '인증 확인',
+                onTap: onVerifyOtp,
+                isLoading: verifyingOtp,
+              ),
+            ],
+          ],
+
+          // 인증 완료 상태
+          if (phoneVerified) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline_rounded,
+                      color: Color(0xFF10B981), size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    '전화번호 인증이 완료되었습니다',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontFamily: 'Pretendard',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 32),
+
+          // 완료 버튼
+          if (phoneVerified || !otpSent)
+            _PrimaryButton(
+              label: '시작하기',
+              onTap: completing
+                  ? () {}
+                  : () => onComplete(
+                        phone: phoneVerified ? phoneCtrl.text.trim() : null,
+                      ),
+              isLoading: completing,
+            ),
+
+          const SizedBox(height: 14),
+          if (!phoneVerified)
+            Center(
+              child: GestureDetector(
+                onTap: completing ? null : () => onComplete(phone: null),
+                child: Text(
+                  '건너뛰기',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontFamily: 'Pretendard',
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 공통 컴포넌트 ────────────────────────────────────────────────────────────
+
+class _StepHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _StepHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [
+                const Color(0xFF8B5CF6).withValues(alpha: 0.28),
+                Colors.transparent,
+              ],
+            ),
+          ),
+          child: Icon(icon, size: 26, color: const Color(0xFF8B5CF6)),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            letterSpacing: -0.5,
+            height: 1.25,
+            fontFamily: 'Pretendard',
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.white.withValues(alpha: 0.45),
+            fontFamily: 'Pretendard',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OnboardingField extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode? focusNode;
+  final String hint;
+  final IconData icon;
+  final TextInputType? keyboardType;
+  final bool enabled;
+  final int? maxLength;
+  final String? Function(String?)? validator;
+  final List<TextInputFormatter>? inputFormatters;
+
+  const _OnboardingField({
+    required this.controller,
+    required this.hint,
+    required this.icon,
+    this.focusNode,
+    this.keyboardType,
+    this.enabled = true,
+    this.maxLength,
+    this.validator,
+    this.inputFormatters,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      focusNode: focusNode,
+      keyboardType: keyboardType,
+      enabled: enabled,
+      maxLength: maxLength,
+      validator: validator,
+      inputFormatters: inputFormatters,
+      style: TextStyle(
+        color: enabled ? Colors.white : Colors.white.withValues(alpha: 0.45),
+        fontSize: 15,
+        fontFamily: 'Pretendard',
+      ),
+      decoration: InputDecoration(
+        counterText: '',
+        hintText: hint,
+        hintStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.22),
+          fontSize: 14,
+        ),
+        prefixIcon:
+            Icon(icon, size: 18, color: Colors.white.withValues(alpha: 0.32)),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: enabled ? 0.07 : 0.03),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        focusedBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: Color(0xFF8B5CF6), width: 1.5),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+        errorBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: Color(0xFFFF6B6B)),
+        ),
+        focusedErrorBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: Color(0xFFFF6B6B), width: 1.5),
+        ),
+        errorStyle: const TextStyle(
+          color: Color(0xFFFF6B6B),
+          fontSize: 11,
+          fontFamily: 'Pretendard',
+        ),
+      ),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool isLoading;
+
+  const _PrimaryButton({
+    required this.label,
+    required this.onTap,
+    this.isLoading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: AnimatedOpacity(
+        opacity: isLoading ? 0.7 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          height: 54,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF8B5CF6), Color(0xFFD946EF)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF8B5CF6).withValues(alpha: 0.35),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Center(
+            child: isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontFamily: 'Pretendard',
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 전화번호 자동 포맷 (010-XXXX-XXXX) ──────────────────────────────────────
+
+class _KoreanPhoneFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final buf = StringBuffer();
+    final len = digits.length.clamp(0, 11);
+    for (int i = 0; i < len; i++) {
+      if (i == 3 || i == 7) buf.write('-');
+      buf.write(digits[i]);
+    }
+    final formatted = buf.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+// ─── 배경 페인터 ──────────────────────────────────────────────────────────────
+
+class _OnboardingBgPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, -0.5),
+          radius: 0.9,
+          colors: [
+            const Color(0xFF5B21B6).withValues(alpha: 0.45),
+            Colors.transparent,
+          ],
+        ).createShader(rect),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0.85, 0.8),
+          radius: 0.7,
+          colors: [
+            const Color(0xFF9B2DB5).withValues(alpha: 0.18),
+            Colors.transparent,
+          ],
+        ).createShader(rect),
+    );
+    final rng = math.Random(99);
+    for (int i = 0; i < 60; i++) {
+      canvas.drawCircle(
+        Offset(rng.nextDouble() * size.width, rng.nextDouble() * size.height),
+        0.3 + rng.nextDouble() * 0.9,
+        Paint()
+          ..color =
+              Colors.white.withValues(alpha: 0.04 + rng.nextDouble() * 0.22),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
+}

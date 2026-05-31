@@ -3,21 +3,46 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/providers/nav_provider.dart';
 import '../../application/providers/pin_provider.dart';
+import '../../application/services/recap_service.dart';
 import '../../core/theme/app_theme.dart';
+import '../widgets/recap/recap_popup.dart';
 import 'activity/activity_screen.dart';
 import 'feed/feed_screen.dart';
 import 'map/map_screen.dart';
 import 'profile/profile_screen.dart';
 
-final activeTabProvider = StateProvider<int>((ref) => 0);
-
-class MainShell extends ConsumerWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<MainShell> {
+  @override
+  void initState() {
+    super.initState();
+    // 첫 빌드 완료 후 On This Day 팝업 검사
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkRecap());
+  }
+
+  Future<void> _checkRecap() async {
+    final svc = RecapService.instance;
+    if (svc.alreadyShownToday()) return;
+    final pins = ref.read(pinsProvider);
+    final memories = svc.getMemoriesForToday(pins);
+    if (memories.isEmpty) return;
+    if (!mounted) return;
+    svc.markTodayShown();
+    await RecapPopup.show(context, memories);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final activeTab = ref.watch(activeTabProvider);
+    final isGlobeMode = ref.watch(globeModeProvider);
 
     return Scaffold(
       extendBody: true,
@@ -30,13 +55,21 @@ class MainShell extends ConsumerWidget {
           ProfileScreen(),
         ],
       ),
-      bottomNavigationBar: _FloatingNav(
-        activeTab: activeTab,
-        onTabChanged: (i) => ref.read(activeTabProvider.notifier).state = i,
-        onCreateTap: () {
-          ref.read(activeTabProvider.notifier).state = 0;
-          ref.read(triggerCreatePinProvider.notifier).state = true;
-        },
+      bottomNavigationBar: AnimatedOpacity(
+        opacity: isGlobeMode ? 0.0 : 1.0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+        child: IgnorePointer(
+          ignoring: isGlobeMode,
+          child: _FloatingNav(
+            activeTab: activeTab,
+            onTabChanged: (i) => ref.read(activeTabProvider.notifier).state = i,
+            onCreateTap: () {
+              ref.read(activeTabProvider.notifier).state = 0;
+              ref.read(triggerCreatePinProvider.notifier).state = true;
+            },
+          ),
+        ),
       ),
     );
   }
@@ -52,23 +85,109 @@ class _AnimatedTabView extends StatefulWidget {
   State<_AnimatedTabView> createState() => _AnimatedTabViewState();
 }
 
-class _AnimatedTabViewState extends State<_AnimatedTabView> {
+class _AnimatedTabViewState extends State<_AnimatedTabView>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  int _curr = 0;
+  int _prev = 0;
+  int _dir = 1;
+
+  // 들어오는 탭: 위치 + 스케일 + 페이드
+  static final _inSlide = CurveTween(curve: Curves.easeOutCubic);
+  static final _inFade  = CurveTween(curve: const Interval(0.0, 0.6, curve: Curves.easeOut));
+  static final _inScale = CurveTween(curve: Curves.easeOutCubic);
+
+  // 나가는 탭: 뒤로 살짝 밀리며 어두워짐
+  static final _outSlide = CurveTween(curve: Curves.easeInCubic);
+  static final _outFade  = CurveTween(curve: const Interval(0.0, 0.55, curve: Curves.easeIn));
+
+  @override
+  void initState() {
+    super.initState();
+    _curr = widget.activeTab;
+    _prev = widget.activeTab;
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    )..value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedTabView old) {
+    super.didUpdateWidget(old);
+    if (old.activeTab != widget.activeTab) {
+      _prev = old.activeTab;
+      _curr = widget.activeTab;
+      _dir = _curr > _prev ? 1 : -1;
+      _ctrl.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: List.generate(widget.children.length, (i) {
-        final isActive = i == widget.activeTab;
-        return IgnorePointer(
-          ignoring: !isActive,
-          child: AnimatedOpacity(
-            opacity: isActive ? 1.0 : 0.0,
-            duration: Duration(milliseconds: isActive ? 250 : 120),
-            curve: Curves.easeOutCubic,
-            child: widget.children[i],
-          ),
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (ctx, _) {
+        final raw = _ctrl.value;
+        final tSlideIn  = _inSlide.transform(raw);
+        final tFadeIn   = _inFade.transform(raw);
+        final tScaleIn  = _inScale.transform(raw);
+        final tSlideOut = _outSlide.transform(raw);
+        final tFadeOut  = _outFade.transform(raw);
+        final w = MediaQuery.sizeOf(ctx).width;
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            // MapWidget 같은 native platform view가 Opacity(0)를 무시하고
+            // 배경으로 show-through되는 것을 막기 위한 배경 레이어
+            ColoredBox(color: Theme.of(ctx).scaffoldBackgroundColor),
+            ...List.generate(widget.children.length, (i) {
+            if (i == _curr) {
+              // 들어오는 탭: 25% 이동 슬라이드 + 0.94→1.0 스케일 + 페이드
+              final dx = w * _dir * 0.25 * (1.0 - tSlideIn);
+              final scale = 0.94 + 0.06 * tScaleIn;
+              return Transform.translate(
+                offset: Offset(dx, 0),
+                child: Transform.scale(
+                  scale: scale,
+                  child: Opacity(
+                    opacity: tFadeIn.clamp(0.0, 1.0),
+                    child: widget.children[i],
+                  ),
+                ),
+              );
+            }
+            if (i == _prev && _prev != _curr) {
+              // 나가는 탭: 반대 방향 10% 밀림 + 1.0→0.96 스케일 + 페이드
+              final dx = -w * _dir * 0.10 * tSlideOut;
+              final scale = 1.0 - 0.04 * tSlideOut;
+              return IgnorePointer(
+                child: Transform.translate(
+                  offset: Offset(dx, 0),
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Opacity(
+                      opacity: (1.0 - tFadeOut).clamp(0.0, 1.0),
+                      child: widget.children[i],
+                    ),
+                  ),
+                ),
+              );
+            }
+            return IgnorePointer(
+              child: Opacity(opacity: 0.0, child: widget.children[i]),
+            );
+          }),
+          ],
         );
-      }),
+      },
     );
   }
 }
@@ -86,7 +205,8 @@ class _FloatingNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
+    // iOS 26 시뮬레이터에서 padding.bottom이 비정상적으로 큰 값을 반환하는 버그 방어
+    final bottomInset = MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0);
     // 하단 safe area에 딱 붙이는 기준값
     final bottomPad = bottomInset + 5.0;
     // 블러 스트립 전체 높이 = pill 높이 + 위 여백 + 아래 여백
@@ -137,6 +257,12 @@ class _FloatingNav extends StatelessWidget {
                         color: Colors.black.withValues(alpha: 0.10),
                         blurRadius: 30,
                         offset: const Offset(0, 10),
+                      ),
+                      BoxShadow(
+                        color: context.primaryColor.withValues(alpha: 0.13),
+                        blurRadius: 28,
+                        spreadRadius: -2,
+                        offset: const Offset(0, 6),
                       ),
                     ],
                   ),
@@ -253,14 +379,23 @@ class _NavItemState extends State<_NavItem>
               // 슬라이딩 pill 배경 + 아이콘
               AnimatedContainer(
                 duration: const Duration(milliseconds: 380),
-                curve: Curves.easeOutBack,
+                curve: Curves.easeOutCubic,
                 width: widget.isActive ? 46 : 30,
                 height: 28,
                 decoration: BoxDecoration(
                   color: widget.isActive
-                      ? AppColors.primary.withValues(alpha: 0.14)
+                      ? context.primaryColor.withValues(alpha: 0.14)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(14),
+                  boxShadow: widget.isActive
+                      ? [
+                          BoxShadow(
+                            color: context.primaryColor.withValues(alpha: 0.38),
+                            blurRadius: 14,
+                            spreadRadius: 0,
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Center(
                   child: AnimatedSwitcher(
@@ -276,7 +411,7 @@ class _NavItemState extends State<_NavItem>
                       key: ValueKey(widget.isActive),
                       size: 22,
                       color: widget.isActive
-                          ? AppColors.primary
+                          ? context.primaryColor
                           : AppColors.grey,
                     ),
                   ),
@@ -291,7 +426,7 @@ class _NavItemState extends State<_NavItem>
                       ? FontWeight.w700
                       : FontWeight.w500,
                   color: widget.isActive
-                      ? AppColors.primaryDark
+                      ? context.primaryDarkColor
                       : AppColors.grey,
                 ),
                 child: Text(widget.label),
@@ -313,9 +448,7 @@ class _CreateButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Transform.translate(
-        offset: const Offset(0, -12),
-        child: Container(
+      child: Container(
           width: 56,
           height: 56,
           decoration: BoxDecoration(
@@ -328,11 +461,15 @@ class _CreateButton extends StatelessWidget {
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
+              BoxShadow(
+                color: context.primaryColor.withValues(alpha: 0.22),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
             ],
           ),
           child: const Icon(Icons.add, color: Colors.white, size: 26),
         ),
-      ),
     );
   }
 }

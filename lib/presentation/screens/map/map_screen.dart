@@ -7,18 +7,26 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart' hide Position;
 import 'package:latlong2/latlong.dart' as ll;
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart'
-    hide LocationSettings;
+    hide LocationSettings, Size;
 
+import '../../../application/providers/meeting_provider.dart';
 import '../../../application/providers/pin_provider.dart';
+import '../../../application/providers/theme_provider.dart';
+import '../../../application/services/recap_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/camera_prefs.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/common/glass_button.dart';
 import '../../widgets/map/cluster_anim_overlay.dart';
+import '../../widgets/meeting/meeting_bottom_sheet.dart';
+import '../../widgets/meeting/meeting_overlay.dart';
 import '../../widgets/map/filter_sheet.dart';
-import '../../widgets/map/pin_create_sheet.dart';
+import '../../widgets/recap/recap_popup.dart';
+import '../pin_wizard/pin_wizard_screen.dart';
 import '../../widgets/map/pin_detail_sheet.dart';
 
 // ─── 지구본 모드 상수 ──────────────────────────────────────────────────────────
@@ -43,106 +51,180 @@ class _Cluster {
 
 // ISO 3166-1 alpha-2 → 국기 이모지
 String _countryFlag(String code) {
-  if (code.length != 2) return '🌍';
+  if (code.length != 2) return '';
   final a = String.fromCharCode(code.codeUnitAt(0) - 0x41 + 0x1F1E6);
   final b = String.fromCharCode(code.codeUnitAt(1) - 0x41 + 0x1F1E6);
   return a + b;
 }
 
-// 핀 카테고리 → 이모지
-String _shapeEmoji(String shape) =>
-    AppConstants.pinShapeEmojis[shape] ?? '📍';
+const _countrySvgs = <String, String>{
+  'KR': 'lib/img/flag/flag-for-south-korea-svgrepo-com.svg',
+  'US': 'lib/img/flag/flag-usa-solid-svgrepo-com.svg',
+  'CN': 'lib/img/flag/flag-china-solid-svgrepo-com.svg',
+  'JP': 'lib/img/flag/flag-for-japan-svgrepo-com.svg',
+};
 
-// ─── 마커 비트맵 생성 (캐시됨) ────────────────────────────────────────────────
+// 핀 카테고리 → SVG 경로 (정적 마커용)
+String _shapeSvgPath(String shape) =>
+    AppConstants.pinShapeSvgs[shape] ?? '';
+
+// ─── 마커 비트맵 생성 (캐시됨) — 테마 어웨어 디자인 ──────────────────────────
 
 final _markerCache = <String, Uint8List>{};
 
+// 테마 색상에서 어두운 핀 바디 색상 도출
+Color _pinBodyColor(Color theme) {
+  // HSL 기반으로 채도 유지 + 밝기를 매우 어둡게
+  final hsl = HSLColor.fromColor(theme);
+  return hsl.withLightness(0.10).withSaturation((hsl.saturation * 0.55).clamp(0.0, 1.0)).toColor().withValues(alpha: 0.96);
+}
+
+// 테마 색상에서 테두리 그라디언트 컬러 도출
+List<Color> _pinBorderGradient(Color theme) {
+  final lighter = Color.lerp(theme, Colors.white, 0.35)!;
+  final darker  = Color.lerp(theme, Colors.black, 0.15)!;
+  return [lighter, darker];
+}
+
 Future<Uint8List> _buildMarkerBitmap({
   required bool isCluster,
+  required Color themeColor,
   int count = 0,
-  String emoji = '',
+  String svgPath = '',
+  // 클러스터 아이콘 크로스페이드: 이전 SVG + 진행도 (0.0 = 이전 아이콘, 1.0 = 새 아이콘)
+  String fadeSvgPath = '',
+  double fadeProgress = 1.0,
   required double pixelRatio,
 }) async {
-  final key = '${isCluster}_${count}_${emoji}_${pixelRatio.toStringAsFixed(1)}';
+  final tc = themeColor.toARGB32();
+  final key = '${isCluster}_${count}_${svgPath}_${fadeSvgPath}_${fadeProgress.toStringAsFixed(2)}_${tc}_${pixelRatio.toStringAsFixed(1)}';
   if (_markerCache.containsKey(key)) return _markerCache[key]!;
 
-  final logicalSize = isCluster ? 52.0 : 46.0;
+  // 글로우 sigma(7px)×3 = 21px 여백 확보: 사각형 아티팩트 방지
+  // 원 반지름은 원본(단일 21pt, 클러스터 24pt)으로 고정 → 핀 크기 유지
+  final logicalSize = isCluster ? 94.0 : 88.0;
   final pxSize = (logicalSize * pixelRatio).roundToDouble();
   final cx = pxSize / 2;
   final cy = pxSize / 2;
-  final r = pxSize / 2 - pixelRatio * 2;
+  final r = pixelRatio * (isCluster ? 24.0 : 21.0);
+  final gradientRect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
+
+  final bodyColor = _pinBodyColor(themeColor);
+  final borderColors = _pinBorderGradient(themeColor);
 
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder, Rect.fromLTWH(0, 0, pxSize, pxSize));
+  // blur가 canvas 모서리에서 사각형으로 잘리지 않도록 원형 clip 적용
+  canvas.clipPath(Path()..addOval(Rect.fromLTWH(0, 0, pxSize, pxSize)));
 
-  // 그림자
+  // ── 1. 글로우 헤일로 (테마 색상) ─────────────────────────────────────────
+  canvas.drawCircle(
+    Offset(cx, cy),
+    r + pixelRatio * 3,
+    Paint()
+      ..color = themeColor.withValues(alpha: 0.28)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 7),
+  );
+
+  // ── 2. 드롭 섀도우 ───────────────────────────────────────────────────────
   canvas.drawCircle(
     Offset(cx, cy + pixelRatio * 2.5),
     r,
     Paint()
-      ..color = const Color(0x2A000000)
-      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 6),
-  );
-  // 본체
-  canvas.drawCircle(
-    Offset(cx, cy),
-    r,
-    Paint()..color = isCluster ? const Color(0xFF1C1C1E) : Colors.white,
-  );
-  // 테두리
-  canvas.drawCircle(
-    Offset(cx, cy),
-    r,
-    Paint()
-      ..color = isCluster ? Colors.white.withAlpha(60) : const Color(0xFFD0D0D5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = (isCluster ? 2.5 : 1.5) * pixelRatio,
+      ..color = const Color(0x50000000)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 5),
   );
 
-  if (isCluster && count > 0) {
-    // 클러스터: 숫자
-    final pb =
-        ui.ParagraphBuilder(
-            ui.ParagraphStyle(
-              textAlign: TextAlign.center,
-              fontWeight: ui.FontWeight.w800,
-              fontSize: 13 * pixelRatio,
-            ),
-          )
-          ..pushStyle(ui.TextStyle(color: const ui.Color(0xFFFFFFFF)))
-          ..addText('$count');
-    final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
-    canvas.drawParagraph(
-      para,
-      Offset(cx - para.maxIntrinsicWidth / 2, cy - para.height / 2),
-    );
-  } else if (!isCluster && emoji.isNotEmpty) {
-    // 단일 핀: 이모지
-    final emojiPx = pxSize * 0.50;
-    final pb = ui.ParagraphBuilder(
-      ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: emojiPx),
-    )..addText(emoji);
-    final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
-    canvas.drawParagraph(para, Offset(0, cy - para.height / 2));
+  // ── 3. 핀 바디 (테마 기반 다크 컬러) ─────────────────────────────────────
+  canvas.drawCircle(Offset(cx, cy), r, Paint()..color = bodyColor);
+
+  // ── 4. 테마 그라디언트 테두리 ─────────────────────────────────────────────
+  final borderW = (isCluster ? 3.0 : 2.4) * pixelRatio;
+  canvas.drawCircle(
+    Offset(cx, cy),
+    r - borderW / 2,
+    Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = borderW
+      ..shader = LinearGradient(
+        colors: borderColors,
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(gradientRect),
+  );
+
+  // ── 5. 상단 하이라이트 쉰 ─────────────────────────────────────────────────
+  canvas.drawOval(
+    Rect.fromLTWH(cx - r * 0.38, cy - r * 0.82, r * 0.76, r * 0.38),
+    Paint()..color = const Color(0x18FFFFFF),
+  );
+
+  // ── 6. SVG 아이콘 (크로스페이드 지원) ────────────────────────────────────
+  Future<void> drawSvg(String path, double alpha) async {
+    if (path.isEmpty || alpha <= 0.0) return;
+    try {
+      final loader = SvgAssetLoader(path);
+      final info = await vg.loadPicture(loader, null);
+      final iconPx = r * 0.90;
+      final scale = iconPx / math.max(info.size.width, info.size.height);
+      final scaledW = info.size.width * scale;
+      final scaledH = info.size.height * scale;
+      final ox = cx - scaledW / 2;
+      final oy = cy - scaledH / 2;
+
+      canvas.saveLayer(
+        Rect.fromLTWH(ox, oy, scaledW, scaledH),
+        Paint()..color = Color.fromARGB((alpha * 255).round(), 255, 255, 255),
+      );
+      canvas.save();
+      canvas.translate(ox, oy);
+      canvas.scale(scale);
+      canvas.saveLayer(
+        Rect.fromLTWH(0, 0, info.size.width, info.size.height),
+        Paint()..colorFilter = const ui.ColorFilter.mode(Colors.white, BlendMode.srcIn),
+      );
+      canvas.drawPicture(info.picture);
+      canvas.restore();
+      canvas.restore();
+      canvas.restore();
+      info.picture.dispose();
+    } catch (_) {
+      // SVG 로드/파싱 실패 시 아이콘 없이 핀만 표시
+    }
+  }
+
+  if (svgPath.isNotEmpty) {
+    if (fadeSvgPath.isNotEmpty && fadeProgress < 1.0) {
+      // 크로스페이드: 이전 아이콘 페이드아웃 + 새 아이콘 페이드인
+      await drawSvg(fadeSvgPath, 1.0 - fadeProgress);
+      await drawSvg(svgPath, fadeProgress);
+    } else {
+      await drawSvg(svgPath, 1.0);
+    }
   }
 
   final picture = recorder.endRecording();
   final image = await picture.toImage(pxSize.toInt(), pxSize.toInt());
   final bd = await image.toByteData(format: ui.ImageByteFormat.png);
   final bytes = bd!.buffer.asUint8List();
-  _markerCache[key] = bytes;
+  // 크로스페이드 중간 프레임은 캐시하지 않음
+  if (fadeProgress >= 1.0 || fadeSvgPath.isEmpty) {
+    _markerCache[key] = bytes;
+  }
   return bytes;
 }
 
-// 지구본 모드 국가 마커 (국기 이모지 + 카운트 뱃지)
+// 지구본 모드 국가 마커 (국기 이모지 + 카운트 뱃지) — 테마 색 적용
 Future<Uint8List> _buildCountryMarkerBitmap({
   required String countryCode,
   required int count,
   required double pixelRatio,
+  required Color themeColor,
 }) async {
   final flag = _countryFlag(countryCode);
+  final tc = themeColor.toARGB32();
   final key =
-      'country_${countryCode}_${count}_${pixelRatio.toStringAsFixed(1)}';
+      'country_${countryCode}_${count}_${pixelRatio.toStringAsFixed(1)}_$tc';
   if (_markerCache.containsKey(key)) return _markerCache[key]!;
 
   const logicalSize = 58.0;
@@ -150,72 +232,93 @@ Future<Uint8List> _buildCountryMarkerBitmap({
   final cx = pxSize / 2;
   final cy = pxSize / 2;
   final r = pxSize / 2 - pixelRatio * 2;
+  final gradientRect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
+
+  final bodyColor = _pinBodyColor(themeColor);
+  final borderColors = _pinBorderGradient(themeColor);
 
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder, Rect.fromLTWH(0, 0, pxSize, pxSize));
+  canvas.clipPath(Path()..addOval(Rect.fromLTWH(0, 0, pxSize, pxSize)));
 
-  // 그림자
-  canvas.drawCircle(
-    Offset(cx, cy + pixelRatio * 3),
-    r,
-    Paint()
-      ..color = const Color(0x35000000)
-      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 7),
-  );
-  // 흰 배경
-  canvas.drawCircle(Offset(cx, cy), r, Paint()..color = Colors.white);
-  // 테두리
+  // 글로우
   canvas.drawCircle(
     Offset(cx, cy),
+    r + pixelRatio * 3,
+    Paint()
+      ..color = themeColor.withValues(alpha: 0.28)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 7),
+  );
+  // 그림자
+  canvas.drawCircle(
+    Offset(cx, cy + pixelRatio * 2.5),
     r,
     Paint()
-      ..color = const Color(0x18000000)
+      ..color = const Color(0x50000000)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 5),
+  );
+  // 다크 바디
+  canvas.drawCircle(Offset(cx, cy), r, Paint()..color = bodyColor);
+  // 테마 그라디언트 테두리
+  final borderW = pixelRatio * 2.4;
+  canvas.drawCircle(
+    Offset(cx, cy),
+    r - borderW / 2,
+    Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = pixelRatio * 1.5,
+      ..strokeWidth = borderW
+      ..shader = LinearGradient(
+        colors: borderColors,
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(gradientRect),
   );
 
-  // 국기 이모지
-  final emojiPx = pxSize * 0.48;
-  final pb = ui.ParagraphBuilder(
-    ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: emojiPx),
-  )..addText(flag);
-  final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
-  canvas.drawParagraph(para, Offset(0, cy - para.height / 2));
-
-  // 카운트 뱃지 (2개 이상일 때)
-  if (count > 1) {
-    final badgeR = pixelRatio * 10;
-    final badgeX = cx + r * 0.62;
-    final badgeY = cy - r * 0.62;
-    canvas.drawCircle(
-      Offset(badgeX, badgeY),
-      badgeR,
-      Paint()..color = const Color(0xFF1C1C1E),
-    );
-    canvas.drawCircle(
-      Offset(badgeX, badgeY),
-      badgeR,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = pixelRatio,
-    );
-    final cPb =
-        ui.ParagraphBuilder(
-            ui.ParagraphStyle(
-              textAlign: TextAlign.center,
-              fontWeight: ui.FontWeight.w800,
-              fontSize: badgeR * 1.15,
-            ),
-          )
-          ..pushStyle(ui.TextStyle(color: const ui.Color(0xFFFFFFFF)))
-          ..addText('$count');
-    final cPara = cPb.build()
-      ..layout(ui.ParagraphConstraints(width: badgeR * 2));
-    canvas.drawParagraph(
-      cPara,
-      Offset(badgeX - badgeR, badgeY - cPara.height / 2),
-    );
+  // 국기 — SVG 우선, 없으면 이모지 폴백
+  final flagSvgPath = _countrySvgs[countryCode];
+  if (flagSvgPath != null) {
+    try {
+      final loader = SvgAssetLoader(flagSvgPath);
+      final info = await vg.loadPicture(loader, null);
+      final iconPx = r * 0.72;
+      final scale = iconPx / math.max(info.size.width, info.size.height);
+      final scaledW = info.size.width * scale;
+      final scaledH = info.size.height * scale;
+      final ox = cx - scaledW / 2;
+      final oy = cy - scaledH / 2;
+      canvas.saveLayer(
+        Rect.fromLTWH(ox, oy, scaledW, scaledH),
+        Paint()..color = Colors.white,
+      );
+      canvas.save();
+      canvas.translate(ox, oy);
+      canvas.scale(scale);
+      canvas.saveLayer(
+        Rect.fromLTWH(0, 0, info.size.width, info.size.height),
+        Paint()..colorFilter = const ui.ColorFilter.mode(Colors.white, BlendMode.srcIn),
+      );
+      canvas.drawPicture(info.picture);
+      canvas.restore();
+      canvas.restore();
+      canvas.restore();
+      info.picture.dispose();
+    } catch (_) {
+      // SVG 실패 시 이모지 폴백
+      final emojiPx = pxSize * 0.48;
+      final pb = ui.ParagraphBuilder(
+        ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: emojiPx),
+      )..addText(flag);
+      final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
+      canvas.drawParagraph(para, Offset(0, cy - para.height / 2));
+    }
+  } else {
+    // SVG 없는 국가 — 이모지
+    final emojiPx = pxSize * 0.48;
+    final pb = ui.ParagraphBuilder(
+      ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: emojiPx),
+    )..addText(flag);
+    final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
+    canvas.drawParagraph(para, Offset(0, cy - para.height / 2));
   }
 
   final picture = recorder.endRecording();
@@ -232,51 +335,132 @@ Future<Uint8List> _buildNumberedMarkerBitmap(
   Color bgColor = AppColors.primary,
   Color textColor = Colors.white,
   Color borderColor = Colors.white,
+  String svgPath = '',
 }) async {
-  final key =
-      'num_${number}_${pixelRatio.toStringAsFixed(1)}_${bgColor.toARGB32()}';
+  final key = 'num_${number}_${pixelRatio.toStringAsFixed(1)}_${bgColor.toARGB32()}_$svgPath';
   if (_markerCache.containsKey(key)) return _markerCache[key]!;
 
-  const logicalSize = 48.0;
+  // 글로우 여백 확보를 위해 캔버스를 핀과 동일한 크기로 확장
+  const logicalSize = 88.0;
   final pxSize = (logicalSize * pixelRatio).roundToDouble();
   final cx = pxSize / 2;
   final cy = pxSize / 2;
-  final r = pxSize / 2 - pixelRatio * 2;
+  final r = pixelRatio * 21.0;
 
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder, Rect.fromLTWH(0, 0, pxSize, pxSize));
+  canvas.clipPath(Path()..addOval(Rect.fromLTWH(0, 0, pxSize, pxSize)));
 
+  // 1. 글로우
+  canvas.drawCircle(
+    Offset(cx, cy),
+    r + pixelRatio * 3,
+    Paint()
+      ..color = bgColor.withValues(alpha: 0.28)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 7),
+  );
+
+  // 2. 드롭 섀도우
   canvas.drawCircle(
     Offset(cx, cy + pixelRatio * 2.5),
     r,
     Paint()
-      ..color = const Color(0x3A000000)
+      ..color = const Color(0x50000000)
       ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 5),
   );
+
+  // 3. 핀 바디
   canvas.drawCircle(Offset(cx, cy), r, Paint()..color = bgColor);
+
+  // 4. 테두리
   canvas.drawCircle(
     Offset(cx, cy),
     r,
     Paint()
-      ..color = borderColor
+      ..color = borderColor.withValues(alpha: 0.45)
       ..style = PaintingStyle.stroke
       ..strokeWidth = pixelRatio * 2,
   );
-  final pb =
-      ui.ParagraphBuilder(
-          ui.ParagraphStyle(
-            textAlign: TextAlign.center,
-            fontWeight: ui.FontWeight.w800,
-            fontSize: 13 * pixelRatio,
-          ),
-        )
-        ..pushStyle(ui.TextStyle(color: ui.Color(textColor.toARGB32())))
-        ..addText('$number');
-  final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
-  canvas.drawParagraph(
-    para,
-    Offset(cx - para.maxIntrinsicWidth / 2, cy - para.height / 2),
+
+  // 5. 상단 하이라이트
+  canvas.drawOval(
+    Rect.fromLTWH(cx - r * 0.38, cy - r * 0.82, r * 0.76, r * 0.38),
+    Paint()..color = const Color(0x18FFFFFF),
   );
+
+  // 6. SVG 카테고리 아이콘 또는 숫자 (SVG 없을 때)
+  if (svgPath.isNotEmpty) {
+    try {
+      final loader = SvgAssetLoader(svgPath);
+      final info = await vg.loadPicture(loader, null);
+      final iconPx = r * 0.85;
+      final scale = iconPx / math.max(info.size.width, info.size.height);
+      final scaledW = info.size.width * scale;
+      final scaledH = info.size.height * scale;
+      final ox = cx - scaledW / 2;
+      final oy = cy - scaledH / 2;
+      canvas.saveLayer(
+        Rect.fromLTWH(ox, oy, scaledW, scaledH),
+        Paint()..color = Colors.white,
+      );
+      canvas.save();
+      canvas.translate(ox, oy);
+      canvas.scale(scale);
+      canvas.saveLayer(
+        Rect.fromLTWH(0, 0, info.size.width, info.size.height),
+        Paint()..colorFilter = const ui.ColorFilter.mode(Colors.white, BlendMode.srcIn),
+      );
+      canvas.drawPicture(info.picture);
+      canvas.restore();
+      canvas.restore();
+      canvas.restore();
+      info.picture.dispose();
+    } catch (_) {
+      // SVG 로드 실패 시 무시 (숫자 배지만 표시)
+    }
+  } else {
+    // SVG 없을 때: 숫자를 핀 중앙에 표시
+    final pb = ui.ParagraphBuilder(
+      ui.ParagraphStyle(textAlign: TextAlign.center, fontWeight: ui.FontWeight.w800, fontSize: 14 * pixelRatio),
+    )..pushStyle(ui.TextStyle(color: ui.Color(textColor.toARGB32())))
+     ..addText('$number');
+    final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
+    canvas.drawParagraph(para, Offset(cx - para.maxIntrinsicWidth / 2, cy - para.height / 2));
+  }
+
+  // 7. 순번 배지 (SVG 있을 때 우상단에 흰 원 + 테마색 숫자)
+  if (svgPath.isNotEmpty) {
+    final badgeR = pixelRatio * 9.0;
+    final badgeX = cx + r * 0.62;
+    final badgeY = cy - r * 0.62;
+
+    // 배지 그림자
+    canvas.drawCircle(
+      Offset(badgeX, badgeY + pixelRatio),
+      badgeR,
+      Paint()
+        ..color = const Color(0x40000000)
+        ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 1.5),
+    );
+    // 배지 배경 (항상 흰색)
+    canvas.drawCircle(Offset(badgeX, badgeY), badgeR, Paint()..color = Colors.white);
+    // 배지 테두리 (테마색)
+    canvas.drawCircle(
+      Offset(badgeX, badgeY),
+      badgeR,
+      Paint()
+        ..color = bgColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = pixelRatio * 1.5,
+    );
+    // 배지 숫자 (테마색 → 흰 배경 위에서 가독성 최상)
+    final numPb = ui.ParagraphBuilder(
+      ui.ParagraphStyle(textAlign: TextAlign.center, fontWeight: ui.FontWeight.w900, fontSize: 9 * pixelRatio),
+    )..pushStyle(ui.TextStyle(color: ui.Color(bgColor.toARGB32())))
+     ..addText('$number');
+    final numPara = numPb.build()..layout(ui.ParagraphConstraints(width: badgeR * 2));
+    canvas.drawParagraph(numPara, Offset(badgeX - badgeR, badgeY - numPara.height / 2));
+  }
 
   final picture = recorder.endRecording();
   final image = await picture.toImage(pxSize.toInt(), pxSize.toInt());
@@ -294,6 +478,7 @@ Future<Uint8List> _buildLocationBitmap(double pixelRatio) async {
 
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder, Rect.fromLTWH(0, 0, pxSize, pxSize));
+  canvas.clipPath(Path()..addOval(Rect.fromLTWH(0, 0, pxSize, pxSize)));
 
   canvas.drawCircle(
     Offset(cx, cy),
@@ -342,22 +527,46 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   double _zoom = 13.0;
   double _cameraCenterLat = 37.5665;
   double _cameraCenterLng = 126.9780;
-  bool _showFilterSheet = false;
   bool _mapReady = false;
+  // 줌 이벤트 throttle: 마지막으로 업데이트를 트리거한 줌 값
+  double _lastUpdateZoom = 13.0;
+
+  // 카메라 위치 저장 디바운스 (1초)
+  Timer? _cameraSaveTimer;
 
   // 지구본 모드
   bool _isGlobeMode = false;
   bool _isGlobeTransitioning = false;
   bool _globePanelExpanded = false;
 
+  // 지구본 전환 핀 모션 오버레이
+  bool _showGlobeTransAnim = false;
+  bool _globeTransEntering = true;
+  List<ClusterItem> _globeTransPins = [];
+  double _globeTransZoom = 11.0;
+  double _globeTransCenterLat = 37.5665;
+  double _globeTransCenterLng = 126.9780;
+
   Timer? _updateTimer;
+  Timer? _cycleTimer;
   List<PinModel> _currentPins = [];
   Cancelable? _tapSubscription;
 
-  // 클러스터 Nebulous 애니메이션
-  List<ClusterItem> _animPrev = [];
-  List<ClusterItem> _animNext = [];
-  bool _showClusterAnim = false;
+  // 클러스터 아이콘 사이클링
+  // 키: "${lat.toStringAsFixed(4)}_${lng.toStringAsFixed(4)}"
+  final Map<String, int> _clusterIconIndex = {};
+  // 라이브 어노테이션 (제자리 업데이트 + 크로스페이드용)
+  final Map<String, PointAnnotation> _annotationByKey = {};
+  List<_Cluster> _liveClusters = [];
+  bool _isCycling = false;
+  // 마커 업데이트 뮤텍스 — concurrent deleteAll/createMulti 방지
+  bool _isUpdatingMarkers = false;
+  // 업데이트 스킵됐을 때 완료 후 재실행할 핀 목록
+  List<PinModel>? _pendingUpdatePins;
+  // 세대 카운터 — 사이클 도중 _updateMarkers 완료 감지 (isUpdatingMarkers가 false로 돌아온 경우도 잡음)
+  int _markerGeneration = 0;
+  // 직전 테마 색상 (변경 감지용)
+  Color? _lastThemeColor;
 
   // 경로 모드
   List<PinModel>? _routePins;
@@ -367,11 +576,132 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   bool _controlsExpanded = true;
   bool get _routeMode => _routePins != null;
 
+  // 약속 시스템 — 화면 좌표 (pixelForCoordinate 결과)
+  Offset _meetingMyScreenPos = Offset.zero;
+  Offset _meetingFriendScreenPos = Offset.zero;
+  Timer? _meetingPosTimer;
+
+  // Recap 위치 기반 — GPS 스트림 + 이미 보여준 핀 ID 세트
+  // StreamSubscription<dynamic>: geolocator.Position 은 mapbox Position 과 충돌하므로 dynamic 사용
+  StreamSubscription<dynamic>? _recapGpsSub;
+  final Set<String> _shownRecapIds = {};
+  PinModel? _recapBannerPin;
+
   @override
   void dispose() {
     _updateTimer?.cancel();
+    _cycleTimer?.cancel();
+    _meetingPosTimer?.cancel();
     _tapSubscription?.cancel();
+    _recapGpsSub?.cancel();
+    _cameraSaveTimer?.cancel();
     super.dispose();
+  }
+
+  void _scheduleMeetingPositionUpdate() {
+    _meetingPosTimer?.cancel();
+    _meetingPosTimer = Timer(
+      const Duration(milliseconds: 60),
+      _updateMeetingScreenPositions,
+    );
+  }
+
+  Future<void> _updateMeetingScreenPositions() async {
+    if (_mapboxMap == null) return;
+    final meetingState = ref.read(meetingProvider);
+    if (!meetingState.isApproaching) return;
+
+    final myLat = meetingState.myLat;
+    final myLng = meetingState.myLng;
+    final friendLat = meetingState.friendLat;
+    final friendLng = meetingState.friendLng;
+
+    if (myLat != null && myLng != null) {
+      final sc = await _mapboxMap!
+          .pixelForCoordinate(Point(coordinates: Position(myLng, myLat)));
+      if (mounted) setState(() => _meetingMyScreenPos = Offset(sc.x, sc.y));
+    }
+    if (friendLat != null && friendLng != null) {
+      final sc = await _mapboxMap!.pixelForCoordinate(
+          Point(coordinates: Position(friendLng, friendLat)));
+      if (mounted) {
+        setState(() => _meetingFriendScreenPos = Offset(sc.x, sc.y));
+      }
+    }
+  }
+
+  void _startCycleTimer() {
+    _cycleTimer?.cancel();
+    _cycleTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (!mounted || !_mapReady) return;
+      _cycleClusterIcons();
+    });
+  }
+
+  String _clusterKey(_Cluster c) =>
+      '${c.lat.toStringAsFixed(4)}_${c.lng.toStringAsFixed(4)}';
+
+  Future<void> _cycleClusterIcons() async {
+    if (_currentPins.isEmpty || _pinManager == null) return;
+    if (_isCycling || _annotationByKey.isEmpty) return;
+    if (_isUpdatingMarkers) return; // 마커 업데이트 중 사이클 스킵 — annotation 충돌 방지
+
+    final clusters = _computeClusters(_currentPins, _isGlobeMode ? 0.0 : _zoom);
+    final pixelRatio =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    final themeColor = ref.read(themePresetProvider).primary;
+
+    // 아이콘 전환이 필요한 클러스터 수집
+    final toCycle = <(PointAnnotation, _Cluster, String, String)>[];
+    for (final c in clusters) {
+      if (c.countryCode != null || c.pins.length <= 1) continue;
+      final shapes = c.pins.map((p) => p.pinShape).toSet().toList()..sort();
+      if (shapes.length <= 1) continue;
+      final key = _clusterKey(c);
+      final annotation = _annotationByKey[key];
+      if (annotation == null) continue;
+      final oldIdx = (_clusterIconIndex[key] ?? 0) % shapes.length;
+      final newIdx = (oldIdx + 1) % shapes.length;
+      _clusterIconIndex[key] = newIdx;
+      toCycle.add((
+        annotation,
+        c,
+        _shapeSvgPath(shapes[oldIdx]),
+        _shapeSvgPath(shapes[newIdx]),
+      ));
+    }
+
+    if (toCycle.isEmpty) return;
+
+    // 8프레임 크로스페이드 (deleteAll 없이 제자리 update)
+    _isCycling = true;
+    const frames = 8;
+    for (int f = 1; f <= frames; f++) {
+      if (!mounted || _pinManager == null || _isUpdatingMarkers) break;
+      final progress = f / frames;
+      // 비트맵 빌드 전 세대 스냅샷 — 빌드 중 _updateMarkers가 완료돼도 감지
+      final genSnapshot = _markerGeneration;
+      await Future.wait(toCycle.map((entry) async {
+        final (annotation, c, oldSvg, newSvg) = entry;
+        final bitmap = await _buildMarkerBitmap(
+          isCluster: c.pins.length > 1,
+          themeColor: themeColor,
+          count: c.pins.length,
+          svgPath: newSvg,
+          fadeSvgPath: oldSvg,
+          fadeProgress: progress,
+          pixelRatio: pixelRatio,
+        );
+        // 세대가 바뀌었거나(_updateMarkers 완료) 업데이트 중이면 스킵
+        if (_pinManager == null ||
+            _isUpdatingMarkers ||
+            _markerGeneration != genSnapshot) { return; }
+        annotation.image = bitmap;
+        await _pinManager!.update(annotation);
+      }));
+      if (f < frames) await Future.delayed(const Duration(milliseconds: 45));
+    }
+    _isCycling = false;
   }
 
   // ─── 클러스터 계산 ─────────────────────────────────────────────────────────
@@ -441,47 +771,37 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return clusters;
   }
 
+  // ─── 마커 페이드 헬퍼 ──────────────────────────────────────────────────────
+
   // ─── 마커 업데이트 ─────────────────────────────────────────────────────────
-
-  List<_Cluster> _lastClusters = [];
-
-  ClusterItem _toItem(_Cluster c) => ClusterItem(
-    lat: c.lat,
-    lng: c.lng,
-    count: c.pins.length,
-    emoji: c.pins.length == 1 ? _shapeEmoji(c.pins.first.pinShape) : '',
-    countryFlag: c.countryCode != null
-        ? (c.countryCode == '_unknown' ? '🌍' : _countryFlag(c.countryCode!))
-        : null,
-  );
 
   Future<void> _updateMarkers(List<PinModel> pins) async {
     if (!_mapReady || _pinManager == null) return;
-
+    // 동시 실행 방지: 이전 호출이 진행 중이면 완료 후 재실행 예약
+    if (_isUpdatingMarkers) {
+      _pendingUpdatePins = pins;
+      return;
+    }
+    _pendingUpdatePins = null;
+    _isUpdatingMarkers = true;
+    _markerGeneration++;
+    _lastUpdateZoom = _zoom;
+    try {
     _currentPins = pins;
     if (_routeMode) return; // 경로 모드 중엔 마커 재렌더 스킵
     final pixelRatio =
         WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
 
-    final clusters = _computeClusters(pins, _zoom);
-
-    // ── Nebulous 애니메이션 트리거 ──────────────────────────────────────────
-    // 클러스터 수가 바뀐 경우에만 (줌 변화로 인한 merge/split)
-    if (_lastClusters.isNotEmpty &&
-        _lastClusters.length != clusters.length &&
-        mounted &&
-        !_isGlobeTransitioning) {
-      setState(() {
-        _animPrev = _lastClusters.map(_toItem).toList();
-        _animNext = clusters.map(_toItem).toList();
-        _showClusterAnim = true;
-      });
+    // 테마 색상 변경 감지 → 캐시 무효화
+    final themePreset = ref.read(themePresetProvider);
+    final themeColor = themePreset.primary;
+    if (_lastThemeColor != null && _lastThemeColor != themeColor) {
+      _markerCache.clear();
     }
-    _lastClusters = clusters;
+    _lastThemeColor = themeColor;
 
-    await _pinManager!.deleteAll();
-    _pinAnnotationIds.clear();
-    _clusterIds.clear();
+    // 지구본 모드에서는 zoom 값에 관계없이 항상 국가 클러스터 사용
+    final clusters = _computeClusters(pins, _isGlobeMode ? 0.0 : _zoom);
 
     final images = await Future.wait(
       clusters.map((c) {
@@ -491,12 +811,32 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             countryCode: c.countryCode == '_unknown' ? '' : c.countryCode!,
             count: c.pins.length,
             pixelRatio: pixelRatio,
+            themeColor: themeColor,
           );
         }
+        // 클러스터 사이클링 아이콘 계산
+        String svgPath = '';
+        final shapes = c.pins.map((p) => p.pinShape).toSet().toList()..sort();
+        if (c.pins.length == 1) {
+          svgPath = _shapeSvgPath(c.pins.first.pinShape);
+        } else {
+          if (shapes.length > 1) {
+            final key = '${c.lat.toStringAsFixed(4)}_${c.lng.toStringAsFixed(4)}';
+            final idx = (_clusterIconIndex[key] ?? 0) % shapes.length;
+            svgPath = _shapeSvgPath(shapes[idx]);
+          } else {
+            svgPath = _shapeSvgPath(shapes.first);
+          }
+        }
+        // 단일 카테고리면 카테고리 색, 혼합 클러스터면 테마 색
+        final markerColor = shapes.length == 1
+            ? AppConstants.categoryColor(shapes.first, themePreset)
+            : themeColor;
         return _buildMarkerBitmap(
           isCluster: c.pins.length > 1,
+          themeColor: markerColor,
           count: c.pins.length,
-          emoji: c.pins.length == 1 ? _shapeEmoji(c.pins.first.pinShape) : '',
+          svgPath: svgPath,
           pixelRatio: pixelRatio,
         );
       }),
@@ -504,6 +844,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     if (!mounted) return;
 
+    // ── 클러스터 수 동일: 제자리 업데이트 (빈 프레임 방지) ─────────────────
+    if (_liveClusters.isNotEmpty &&
+        _liveClusters.length == clusters.length &&
+        _annotationByKey.isNotEmpty) {
+      if (await _tryUpdateInPlace(clusters, images)) {
+        await _polylineManager!.deleteAll();
+        return;
+      }
+    }
+
+    // ── 전체 재생성 (fade-out → delete → create invisible → fade-in) ─────────
     final options = List.generate(
       clusters.length,
       (i) => PointAnnotationOptions(
@@ -512,11 +863,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         ),
         image: images[i],
         iconSize: 1.0,
+        iconOpacity: 1.0,
         iconAnchor: IconAnchor.CENTER,
       ),
     );
 
-    if (options.isEmpty) return;
+    // 1. 구 마커 일괄 삭제
+    await _pinManager!.deleteAll();
+    _pinAnnotationIds.clear();
+    _clusterIds.clear();
+    _annotationByKey.clear();
+
+    if (options.isEmpty) {
+      _liveClusters = clusters;
+      await _polylineManager!.deleteAll();
+      return;
+    }
+
+    // 2. 새 마커 생성 (투명 상태)
     final created = await _pinManager!.createMulti(options);
 
     for (var i = 0; i < created.length; i++) {
@@ -524,7 +888,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       if (annotation == null) continue;
       final id = annotation.id;
       final cluster = clusters[i];
-      // 국가 클러스터는 항상 줌인 (지구본 모드에서 핀 상세 안 띄움)
+      _annotationByKey[_clusterKey(cluster)] = annotation;
       if (cluster.countryCode != null) {
         _clusterIds[id] = (cluster.lat, cluster.lng);
       } else if (cluster.pins.length == 1) {
@@ -534,7 +898,73 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
     }
 
+    _liveClusters = clusters;
     await _polylineManager!.deleteAll();
+    } finally {
+      _isUpdatingMarkers = false;
+      // 업데이트가 스킵됐던 경우 → 지금 즉시 재실행
+      final pending = _pendingUpdatePins;
+      if (pending != null && mounted) {
+        _pendingUpdatePins = null;
+        _updateMarkers(pending); // 대기 중인 업데이트 지연 없이 즉시 실행
+      }
+    }
+  }
+
+  // 클러스터 수가 같을 때 어노테이션을 제자리에서 업데이트
+  Future<bool> _tryUpdateInPlace(
+      List<_Cluster> newClusters, List<Uint8List> images) async {
+    final oldList = _liveClusters;
+    final usedOld = List.filled(oldList.length, false);
+    final pairs = <(int, int)>[]; // (newIdx, oldIdx)
+
+    for (int ni = 0; ni < newClusters.length; ni++) {
+      double minDist = double.infinity;
+      int bestOld = -1;
+      for (int oi = 0; oi < oldList.length; oi++) {
+        if (usedOld[oi]) continue;
+        final d = (newClusters[ni].lat - oldList[oi].lat).abs() +
+            (newClusters[ni].lng - oldList[oi].lng).abs();
+        if (d < minDist) {
+          minDist = d;
+          bestOld = oi;
+        }
+      }
+      if (bestOld == -1) return false;
+      usedOld[bestOld] = true;
+      pairs.add((ni, bestOld));
+    }
+
+    _pinAnnotationIds.clear();
+    _clusterIds.clear();
+    final newByKey = <String, PointAnnotation>{};
+
+    for (final (ni, oi) in pairs) {
+      final oldKey = _clusterKey(oldList[oi]);
+      final annotation = _annotationByKey[oldKey];
+      if (annotation == null) return false;
+      annotation.geometry =
+          Point(coordinates: Position(newClusters[ni].lng, newClusters[ni].lat));
+      annotation.image = images[ni];
+      await _pinManager!.update(annotation);
+
+      final cluster = newClusters[ni];
+      newByKey[_clusterKey(cluster)] = annotation;
+      final id = annotation.id;
+      if (cluster.countryCode != null) {
+        _clusterIds[id] = (cluster.lat, cluster.lng);
+      } else if (cluster.pins.length == 1) {
+        _pinAnnotationIds[id] = cluster.pins.first.id;
+      } else {
+        _clusterIds[id] = (cluster.lat, cluster.lng);
+      }
+    }
+
+    _annotationByKey
+      ..clear()
+      ..addAll(newByKey);
+    _liveClusters = newClusters;
+    return true;
   }
 
   void _scheduleUpdate(List<PinModel> pins) {
@@ -601,23 +1031,44 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     } catch (_) {}
   }
 
+  // 지구본 모드 팬 핸들러 — Mapbox scrollEnabled: false 상태에서 Flutter가 lat/lng 직접 제어
   // ─── 지구본 모드 ──────────────────────────────────────────────────────────
 
   Future<void> _enterGlobeMode() async {
     if (_isGlobeMode || _isGlobeTransitioning || _mapboxMap == null) return;
-    // setState 없이 직접 설정 — 카메라 리스너에서만 사용
     _isGlobeTransitioning = true;
 
     HapticFeedback.mediumImpact();
 
+    // 현재 핀들을 캡처해서 수렴 애니메이션 실행
+    final capturePins = _currentPins
+        .map((p) => ClusterItem(lat: p.latitude, lng: p.longitude, count: 1))
+        .toList();
+    if (mounted) {
+      setState(() {
+        _globeTransPins = capturePins;
+        _globeTransEntering = true;
+        _globeTransZoom = _zoom;
+        _globeTransCenterLat = _cameraCenterLat;
+        _globeTransCenterLng = _cameraCenterLng;
+        _showGlobeTransAnim = true;
+      });
+    }
+
+    // flyTo 시작 전 마커 즉시 삭제 — 애니메이션 중 잔상 방지
+    await _pinManager?.deleteAll();
+    _pinAnnotationIds.clear();
+    _clusterIds.clear();
+    _annotationByKey.clear();
+    _liveClusters = [];
+
     final state = await _mapboxMap!.getCameraState();
-    // flyTo future가 애니메이션 완료 전에 resolve될 수 있으므로 await하지 않음
     _mapboxMap!.flyTo(
       CameraOptions(
         center: state.center,
         zoom: _kGlobeTargetZoom,
         pitch: 0,
-        bearing: 0,
+        bearing: state.bearing,
       ),
       MapAnimationOptions(duration: 2200),
     );
@@ -626,29 +1077,54 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     await Future.delayed(const Duration(milliseconds: 2400));
 
     if (mounted) {
+      ref.read(globeModeProvider.notifier).state = true;
+
       setState(() {
         _isGlobeMode = true;
         _isGlobeTransitioning = false;
         _globePanelExpanded = false;
       });
-      _scheduleUpdate(ref.read(filteredPinsProvider));
+      _updateMarkers(ref.read(filteredPinsProvider));
     }
   }
 
   Future<void> _exitGlobeMode({double? lat, double? lng}) async {
     if (!_isGlobeMode || _isGlobeTransitioning || _mapboxMap == null) return;
 
+    final targetLat = lat ?? 37.5665;
+    final targetLng = lng ?? 126.9780;
+
+    ref.read(globeModeProvider.notifier).state = false;
     setState(() {
       _isGlobeMode = false;
       _isGlobeTransitioning = true;
+      // 목표 줌/위치 기준으로 핀 확산 애니메이션 준비
+      _globeTransPins = _currentPins.isEmpty
+          ? ref.read(filteredPinsProvider)
+                .map((p) => ClusterItem(lat: p.latitude, lng: p.longitude, count: 1))
+                .toList()
+          : _currentPins
+                .map((p) => ClusterItem(lat: p.latitude, lng: p.longitude, count: 1))
+                .toList();
+      _globeTransEntering = false;
+      _globeTransZoom = 11.0;
+      _globeTransCenterLat = targetLat;
+      _globeTransCenterLng = targetLng;
+      _showGlobeTransAnim = true;
     });
 
     HapticFeedback.mediumImpact();
 
-    // flyTo future가 애니메이션 완료 전에 resolve될 수 있으므로 await하지 않음
+    // flyTo 시작 전 마커 즉시 삭제 — 애니메이션 중 잔상 방지
+    await _pinManager?.deleteAll();
+    _pinAnnotationIds.clear();
+    _clusterIds.clear();
+    _annotationByKey.clear();
+    _liveClusters = [];
+
     _mapboxMap!.flyTo(
       CameraOptions(
-        center: Point(coordinates: Position(lng ?? 126.9780, lat ?? 37.5665)),
+        center: Point(coordinates: Position(targetLng, targetLat)),
         zoom: 11.0,
         pitch: 0,
       ),
@@ -660,7 +1136,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     if (mounted) {
       setState(() => _isGlobeTransitioning = false);
-      _scheduleUpdate(ref.read(filteredPinsProvider));
+      _updateMarkers(ref.read(filteredPinsProvider));
     }
   }
 
@@ -691,7 +1167,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Future<void> _activateRoute(List<PinModel> pins, String label) async {
     final sorted = [...pins]
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    _lastClusters = []; // stale cluster animation 방지
+
     setState(() {
       _routePins = sorted;
       _routeDate = label;
@@ -758,7 +1234,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   void _deactivateRoute() {
-    _lastClusters = []; // stale cluster animation 방지
     setState(() {
       _routePins = null;
       _routeDate = '';
@@ -771,35 +1246,23 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final pixelRatio =
         WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
 
-    // 지도 테마별 경로 색상
+    // 경로 색상: 앱 테마 기반 (위성 지도만 흰색, 나머지는 테마 프라이머리)
     final style = ref.read(mapStyleProvider);
-    final (lineColorInt, markerBg, markerText, markerBorder) = switch (style) {
-      MapStyleOption.satellite => (
-        const Color(0xFFFFFFFF).toARGB32(),
-        Colors.white,
-        const Color(0xFF1C1C1E),
-        const Color(0xFF1C1C1E),
-      ),
-      MapStyleOption.dark => (
-        AppColors.primary.toARGB32(),
-        AppColors.primary,
-        Colors.white,
-        Colors.white,
-      ),
-      MapStyleOption.outdoors => (
-        const Color(0xFF1565C0).toARGB32(),
-        const Color(0xFF1565C0),
-        Colors.white,
-        Colors.white,
-      ),
-      _ => (
-        // standard
-        AppColors.primaryDark.toARGB32(),
-        AppColors.primary,
-        Colors.white,
-        Colors.white,
-      ),
-    };
+    final themeColor = ref.read(themePresetProvider).primary;
+    final (lineColorInt, markerBg, markerText, markerBorder) =
+        style == MapStyleOption.satellite
+            ? (
+                const Color(0xFFFFFFFF).toARGB32(),
+                Colors.white,
+                const Color(0xFF1C1C1E),
+                const Color(0xFF1C1C1E),
+              )
+            : (
+                themeColor.toARGB32(),
+                themeColor,
+                Colors.white,
+                Colors.white,
+              );
 
     await _pinManager!.deleteAll();
     await _polylineManager!.deleteAll();
@@ -817,6 +1280,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           bgColor: markerBg,
           textColor: markerText,
           borderColor: markerBorder,
+          svgPath: _shapeSvgPath(e.value.pinShape),
         ),
       ),
     );
@@ -874,15 +1338,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         ),
       );
       if (!mounted) return;
-      showAppSheet<void>(
-        context,
-        builder: (sheetCtx) => PinCreateSheet(
+      Navigator.of(context).push(MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => PinWizardScreen(
           location: ll.LatLng(pos.latitude, pos.longitude),
-          onClose: () => Navigator.of(sheetCtx).pop(),
-          onSaved: () => Navigator.of(sheetCtx).pop(),
+        ),
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('현재 위치를 가져올 수 없어요. 잠시 후 다시 시도해주세요.'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
         ),
       );
-    } catch (_) {}
+    }
   }
 
   // ─── 지도 스타일 변경 ──────────────────────────────────────────────────────
@@ -894,6 +1367,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       MapStyleOption.satellite => MapboxStyles.SATELLITE_STREETS,
       MapStyleOption.outdoors => MapboxStyles.OUTDOORS,
       MapStyleOption.dark => MapboxStyles.DARK,
+      MapStyleOption.light => 'mapbox://styles/mapbox/light-v11',
+      MapStyleOption.streets => 'mapbox://styles/mapbox/streets-v12',
     };
     await _mapboxMap!.style.setStyleURI(uri);
     if (style == MapStyleOption.standard) {
@@ -918,17 +1393,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     if (_zoom < 4) return;
 
-    showAppSheet<void>(
-      context,
-      builder: (_) => PinCreateSheet(
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => PinWizardScreen(
         location: ll.LatLng(lat, lng),
-        onClose: () => Navigator.of(context).pop(),
-        onSaved: () => Navigator.of(context).pop(),
       ),
-    );
+    ));
   }
 
   // ─── 레이어 시트 ──────────────────────────────────────────────────────────
+
+  void _showFilterModal(BuildContext ctx) {
+    showAppSheet<void>(
+      ctx,
+      builder: (sheetCtx) => FilterSheet(
+        onClose: () => Navigator.of(sheetCtx).pop(),
+      ),
+    );
+  }
 
   void _showLayerSheet(BuildContext ctx, WidgetRef ref) {
     showAppSheet<void>(
@@ -948,11 +1430,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
 
-    // 초기 카메라 위치 설정 (viewport prop 대신 여기서 한 번만)
+    // 스플래시 flyTo 종착점과 동일한 카메라로 시작 — 크로스페이드 시 두 맵 뷰가 일치해 전환이 끊기지 않음
+    final cam = await CameraPrefs.load();
+    _zoom = cam.zoom;
+    _cameraCenterLat = cam.lat;
+    _cameraCenterLng = cam.lng;
+    _lastUpdateZoom = cam.zoom;
+
     await mapboxMap.setCamera(
       CameraOptions(
-        center: Point(coordinates: Position(126.9780, 37.5665)),
-        zoom: 13.0,
+        center: Point(coordinates: Position(cam.lng, cam.lat)),
+        zoom: cam.zoom,
         pitch: 0,
         bearing: 0,
       ),
@@ -961,8 +1449,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     // 거리 스케일바 숨기기
     await mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
 
+    // Mapbox 기본 위치 표시기 비활성화 (커스텀 blue dot 사용)
+    await mapboxMap.location.updateSettings(
+      LocationComponentSettings(enabled: false),
+    );
+
     await mapboxMap.style.setProjection(
       StyleProjection(name: StyleProjectionName.globe),
+    );
+
+    // 지구본 모드에서 pitch(기울기) 자유 조작 허용 — 기본값(30°)을 80°으로 확장
+    await mapboxMap.setBounds(
+      CameraBoundsOptions(maxPitch: 80),
     );
 
     _polylineManager = await mapboxMap.annotations
@@ -982,23 +1480,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             context: context,
             barrierDismissible: true,
             barrierLabel: '',
-            barrierColor: Colors.black.withValues(alpha: 0.18),
-            transitionDuration: const Duration(milliseconds: 380),
-            pageBuilder: (ctx, _, _) => Stack(
-              children: [
-                PinDetailSheet(
-                  pinId: pinId,
-                  onClose: () => Navigator.of(ctx).pop(),
-                ),
-              ],
+            barrierColor: Colors.black.withValues(alpha: 0.30),
+            transitionDuration: const Duration(milliseconds: 320),
+            pageBuilder: (ctx, _, _) => PinDetailSheet(
+              pinId: pinId,
+              onClose: () => Navigator.of(ctx).pop(),
             ),
             transitionBuilder: (_, anim, _, child) => FadeTransition(
               opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
-              child: SlideTransition(
-                position: Tween(begin: const Offset(0, 0.12), end: Offset.zero)
-                    .animate(
-                      CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
-                    ),
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.88, end: 1.0).animate(
+                  CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+                ),
                 child: child,
               ),
             ),
@@ -1027,6 +1520,40 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     final pins = ref.read(filteredPinsProvider);
     await _updateMarkers(pins);
+    _startCycleTimer();
+    _startRecapGpsStream();
+  }
+
+  void _startRecapGpsStream() {
+    _recapGpsSub?.cancel();
+    // geolocator.Position 은 hide 되어 있으므로 dynamic 리스너 사용
+    _recapGpsSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.low,
+        distanceFilter: 80,
+      ),
+    ).listen((dynamic pos) => _onRecapPosition(
+          (pos.latitude as num).toDouble(),
+          (pos.longitude as num).toDouble(),
+        ));
+  }
+
+  void _onRecapPosition(double lat, double lng) {
+    if (!mounted) return;
+    if (_recapBannerPin != null) return; // 이미 배너 표시 중
+
+    final allPins = ref.read(pinsProvider);
+    final nearby = RecapService.instance.getMemoriesNear(
+      allPins,
+      lat,
+      lng,
+      shownIds: _shownRecapIds,
+    );
+    if (nearby.isEmpty) return;
+
+    final pin = nearby.first;
+    _shownRecapIds.add(pin.id);
+    setState(() => _recapBannerPin = pin);
   }
 
   // ─── 빌드 ─────────────────────────────────────────────────────────────────
@@ -1050,12 +1577,31 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       if (prev != next) _applyMapStyle(next);
     });
 
+    ref.listen(themePresetProvider, (prev, next) {
+      if (prev != next) {
+        _markerCache.clear();
+        _scheduleUpdate(_currentPins);
+      }
+    });
+
+    // 약속 위치 업데이트 → 화면 좌표 재계산
+    ref.listen(meetingProvider, (prev, next) {
+      if (next.isApproaching &&
+          (prev?.myLat != next.myLat ||
+              prev?.friendLat != next.friendLat ||
+              prev?.friendLng != next.friendLng)) {
+        _scheduleMeetingPositionUpdate();
+      }
+    });
+
     final currentStyle = ref.watch(mapStyleProvider);
     final styleUri = switch (currentStyle) {
       MapStyleOption.standard => MapboxStyles.STANDARD,
       MapStyleOption.satellite => MapboxStyles.SATELLITE_STREETS,
       MapStyleOption.outdoors => MapboxStyles.OUTDOORS,
       MapStyleOption.dark => MapboxStyles.DARK,
+      MapStyleOption.light => 'mapbox://styles/mapbox/light-v11',
+      MapStyleOption.streets => 'mapbox://styles/mapbox/streets-v12',
     };
 
     final bool controlsVisible = !_isGlobeMode && !_isGlobeTransitioning;
@@ -1074,28 +1620,53 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               onMapCreated: _onMapCreated,
               onCameraChangeListener: (data) {
                 final newZoom = data.cameraState.zoom;
-                // 카메라 센터 추적 (Nebulous 오버레이 Mercator 투영용)
                 final center = data.cameraState.center.coordinates;
                 _cameraCenterLat = center.lat.toDouble();
                 _cameraCenterLng = center.lng.toDouble();
-                // 전환 중엔 setState·마커 업데이트 없이 zoom 값만 갱신
+
+                // 약속 화면 좌표 재계산 (카메라 이동 시 마커 위치 동기화)
+                if (ref.read(meetingProvider).isApproaching) {
+                  _scheduleMeetingPositionUpdate();
+                }
+
+                // 전환 중엔 마커 업데이트 없이 zoom 값만 갱신
                 if (_isGlobeTransitioning) {
                   _zoom = newZoom;
                   return;
                 }
-                if ((newZoom - _zoom).abs() > 0.15) {
+                if ((newZoom - _zoom).abs() > 0.08) {
                   setState(() => _zoom = newZoom);
-                  _scheduleUpdate(
-                    _currentPins.isEmpty
-                        ? ref.read(filteredPinsProvider)
-                        : _currentPins,
-                  );
+                  // 클러스터 경계(정수 줌)를 넘어설 때만 업데이트 스케줄
+                  // — 사소한 줌 변화로 인한 불필요한 deleteAll/createMulti 방지
+                  final crossedBoundary =
+                      (newZoom.floor() != _lastUpdateZoom.floor()) ||
+                      (newZoom - _lastUpdateZoom).abs() >= 1.0;
+                  if (crossedBoundary || _annotationByKey.isEmpty) {
+                    _lastUpdateZoom = newZoom;
+                    _scheduleUpdate(
+                      _currentPins.isEmpty
+                          ? ref.read(filteredPinsProvider)
+                          : _currentPins,
+                    );
+                  }
                 }
                 // 줌 기반 지구본 모드 자동 전환
                 if (!_isGlobeMode && newZoom < _kGlobeEnterZoom) {
                   _enterGlobeMode();
                 } else if (_isGlobeMode && newZoom > _kGlobeExitZoom) {
-                  setState(() => _isGlobeMode = false);
+                  _exitGlobeMode();
+                }
+
+                // 1초 디바운스 후 카메라 위치 저장 (스플래시 복원용)
+                if (!_isGlobeMode && !_isGlobeTransitioning) {
+                  _cameraSaveTimer?.cancel();
+                  _cameraSaveTimer = Timer(const Duration(seconds: 1), () {
+                    CameraPrefs.save(
+                      lat: _cameraCenterLat,
+                      lng: _cameraCenterLng,
+                      zoom: _zoom,
+                    );
+                  });
                 }
               },
               onTapListener: _onMapTap, // ignore: deprecated_member_use
@@ -1110,7 +1681,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 child: _MapControls(
                   onGlobeTap: _enterGlobeMode,
                   onLayerTap: () => _showLayerSheet(context, ref),
-                  onFilterTap: () => setState(() => _showFilterSheet = true),
+                  onFilterTap: () => _showFilterModal(context),
                   onPolylineTap: _onPolylineTap,
                   routeActive: _routeMode,
                   isExpanded: _controlsExpanded,
@@ -1123,7 +1694,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             // ── 현재 위치 버튼 (우측 하단) ───────────────────────────────
             Positioned(
               right: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 10,
+              bottom: MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 10,
               child: AnimatedOpacity(
                 opacity: controlsVisible ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 280),
@@ -1156,7 +1727,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               ),
             ),
 
-            // ── 지구본 모드: 하단 패널 ────────────────────────────────────
+            // ── 지구본 모드: 하단 패널 (nav bar는 main_shell에서 숨김) ────────
             Positioned(
               bottom: 0,
               left: 0,
@@ -1181,33 +1752,61 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ),
 
             // ── Nebulous 클러스터 애니메이션 오버레이 ──────────────────────
-            if (_showClusterAnim)
+            // ── 지구본 ↔ 지도 전환 핀 모션 오버레이 ─────────────────────
+            if (_showGlobeTransAnim)
               Positioned.fill(
-                child: ClusterAnimOverlay(
-                  prevItems: _animPrev,
-                  nextItems: _animNext,
-                  zoom: _zoom,
-                  centerLat: _cameraCenterLat,
-                  centerLng: _cameraCenterLng,
+                child: GlobeTransitionOverlay(
+                  pins: _globeTransPins,
+                  zoom: _globeTransZoom,
+                  centerLat: _globeTransCenterLat,
+                  centerLng: _globeTransCenterLng,
+                  themeColor: ref.read(themePresetProvider).primary,
+                  entering: _globeTransEntering,
                   onDone: () {
-                    if (mounted) setState(() => _showClusterAnim = false);
+                    if (mounted) setState(() => _showGlobeTransAnim = false);
                   },
                 ),
               ),
+
+            // ── 약속 — 고무줄 선 + 아바타 마커 오버레이 ─────────────────
+            Builder(builder: (ctx) {
+              final ms = ref.watch(meetingProvider);
+              if (!ms.isApproaching || ms.activeMeeting == null) {
+                return const SizedBox.shrink();
+              }
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: MeetingMapOverlay(
+                      myScreenPos: _meetingMyScreenPos,
+                      friendScreenPos: _meetingFriendScreenPos,
+                      meeting: ms.activeMeeting!,
+                      distanceMeters: ms.distanceMeters,
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: MediaQuery.of(ctx).padding.bottom.clamp(0.0, 60.0) + 16,
+                    child: const MeetingBottomSheet(),
+                  ),
+                ],
+              );
+            }),
 
             // ── 경로 패널 (플로팅 카드, 네비게이션 바 위에 위치) ──────────
             if (_routeMode)
               Positioned(
                 left: 12,
                 right: 12,
-                bottom: MediaQuery.of(context).padding.bottom + 16,
+                bottom: MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 16,
                 child: _RoutePanel(
                   pins: _routePins!,
                   dateLabel: _routeDate,
                   onClose: _deactivateRoute,
                   onSave: () => ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: const Text('동선이 저장되었어요 ✨'),
+                      content: const Text('동선이 저장되었어요'),
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -1219,11 +1818,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 ),
               ),
 
-            // ── 필터 ─────────────────────────────────────────────────────
-            if (_showFilterSheet)
-              FilterSheet(
-                onClose: () => setState(() => _showFilterSheet = false),
+            // ── Recap 위치 배너 ───────────────────────────────────────────
+            if (_recapBannerPin != null)
+              RecapLocationBanner(
+                pin: _recapBannerPin!,
+                onDismiss: () => setState(() => _recapBannerPin = null),
               ),
+
           ],
         ),
       ),
@@ -1274,7 +1875,7 @@ class _MapControls extends StatelessWidget {
                     height: 44,
                     decoration: BoxDecoration(
                       color: routeActive
-                          ? AppColors.primary
+                          ? context.primaryColor
                           : context.glassBtnBg,
                       shape: BoxShape.circle,
                       border: routeActive
@@ -1283,7 +1884,7 @@ class _MapControls extends StatelessWidget {
                       boxShadow: [
                         BoxShadow(
                           color: routeActive
-                              ? AppColors.primary.withValues(alpha: 0.4)
+                              ? context.primaryColor.withValues(alpha: 0.4)
                               : Colors.black.withValues(alpha: 0.08),
                           blurRadius: routeActive ? 14 : 8,
                           offset: const Offset(0, 3),
@@ -1398,12 +1999,12 @@ class _GlobeBottomPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-
+    final safeBottom =
+        MediaQuery.of(context).viewPadding.bottom.clamp(0.0, 40.0);
     return GestureDetector(
       onVerticalDragEnd: (d) {
         final v = d.primaryVelocity ?? 0;
-        if (v < -200 && !isExpanded) onToggle(); // 위로 스와이프 → 펼침
+        if (v < -200 && !isExpanded) onToggle();
         if (v > 200 && isExpanded) onToggle(); // 아래로 스와이프 → 접음
       },
       child: ClipRRect(
@@ -1423,7 +2024,7 @@ class _GlobeBottomPanel extends StatelessWidget {
                 ),
               ),
             ),
-            padding: EdgeInsets.fromLTRB(24, 14, 24, bottomInset + 24),
+            padding: EdgeInsets.fromLTRB(24, 14, 24, safeBottom + 16),
             child: AnimatedSize(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
@@ -1456,8 +2057,13 @@ class _GlobeBottomPanel extends StatelessWidget {
                               width: 0.5,
                             ),
                           ),
-                          child: const Center(
-                            child: Text('📍', style: TextStyle(fontSize: 20)),
+                          child: Center(
+                            child: SvgPicture.asset(
+                              'lib/img/place/map-pin.svg',
+                              width: 20, height: 20,
+                              colorFilter: const ColorFilter.mode(
+                                  Colors.white, BlendMode.srcIn),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -1659,7 +2265,7 @@ class _RouteDateSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final groups = _grouped();
-    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final bottomInset = MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0);
 
     return Container(
       decoration: BoxDecoration(
@@ -1691,7 +2297,7 @@ class _RouteDateSheet extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                Icon(Icons.route_rounded, size: 18, color: AppColors.primary),
+                Icon(Icons.route_rounded, size: 18, color: context.primaryColor),
               ],
             ),
           ),
@@ -1733,13 +2339,13 @@ class _RouteDateSheet extends StatelessWidget {
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
+                              color: context.primaryColor.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.calendar_today_rounded,
                               size: 18,
-                              color: AppColors.primary,
+                              color: context.primaryColor,
                             ),
                           ),
                           const SizedBox(width: 14),
@@ -1759,15 +2365,15 @@ class _RouteDateSheet extends StatelessWidget {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
+                              color: context.primaryColor.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
                               '${datePins.length}개',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
+                                color: context.primaryColor,
                               ),
                             ),
                           ),
@@ -1832,13 +2438,13 @@ class _RoutePanel extends StatelessWidget {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: context.primaryColor.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.route_rounded,
                     size: 15,
-                    color: AppColors.primary,
+                    color: context.primaryColor,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1913,7 +2519,7 @@ class _RoutePanel extends StatelessWidget {
                               width: 22,
                               height: 22,
                               decoration: BoxDecoration(
-                                color: AppColors.primary,
+                                color: context.primaryColor,
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
@@ -1966,15 +2572,15 @@ class _RoutePanel extends StatelessWidget {
                 width: double.infinity,
                 height: 44,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: AppColors.primaryGradient,
+                  gradient: LinearGradient(
+                    colors: [context.primaryColor.withValues(alpha: 0.85), context.primaryColor],
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                   ),
                   borderRadius: BorderRadius.circular(13),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.30),
+                      color: context.primaryColor.withValues(alpha: 0.30),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),
@@ -2008,82 +2614,167 @@ class _LayerSheet extends StatelessWidget {
   const _LayerSheet({required this.current, required this.onSelect});
 
   static const _options = [
-    (MapStyleOption.standard, Icons.map_outlined, '기본'),
-    (MapStyleOption.satellite, Icons.satellite_alt, '위성'),
-    (MapStyleOption.outdoors, Icons.terrain, '야외'),
-    (MapStyleOption.dark, Icons.nights_stay_outlined, '다크'),
+    (MapStyleOption.standard, '기본',    '표준 지도',   Color(0xFF2C3E2A), Color(0xFFEDE3CF)),
+    (MapStyleOption.dark,     '다크',    '야간 모드',   Color(0xFFCBBFFF), Color(0xFF0D1220)),
+    (MapStyleOption.satellite,'위성',    '항공 사진',   Color(0xFF90EFA0), Color(0xFF1D3D28)),
+    (MapStyleOption.outdoors, '야외',    '등산·하이킹', Color(0xFF5A3A18), Color(0xFFF2E8CC)),
+    (MapStyleOption.light,    '라이트',  '밝은 모드',   Color(0xFF5C5242), Color(0xFFF6F3EC)),
+    (MapStyleOption.streets,  '스트리트','도로 중심',   Color(0xFF1E2C3A), Color(0xFFFAFAF6)),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final bottomInset = MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0);
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        color: context.sheetBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: EdgeInsets.fromLTRB(24, 16, 24, bottomInset + 24),
+      padding: EdgeInsets.fromLTRB(20, 14, 20, bottomInset + 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             width: 36,
             height: 4,
-            margin: const EdgeInsets.only(bottom: 20),
+            margin: const EdgeInsets.only(bottom: 18),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.12),
+              color: context.handleColor,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const Align(
+          Align(
             alignment: Alignment.centerLeft,
             child: Text(
               '지도 스타일',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: context.labelColor,
+                letterSpacing: -0.3,
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '마음에 드는 스타일을 선택하세요',
+              style: TextStyle(fontSize: 13, color: context.subLabelColor),
+            ),
+          ),
+          const SizedBox(height: 20),
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 0.85,
             children: _options.map((opt) {
-              final (style, icon, label) = opt;
+              final (style, name, desc, textColor, overlayBg) = opt;
               final isActive = current == style;
               return GestureDetector(
                 onTap: () => onSelect(style),
-                child: Column(
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? AppColors.dark
-                            : Colors.grey.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: isActive ? AppColors.dark : Colors.transparent,
-                          width: 2,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: isActive
+                          ? context.primaryColor
+                          : context.glassBorder,
+                      width: isActive ? 2.5 : 1,
+                    ),
+                    boxShadow: isActive
+                        ? [
+                            BoxShadow(
+                              color: context.primaryColor.withValues(alpha: 0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(17),
+                    child: Stack(
+                      children: [
+                        // 지도 스타일 일러스트 썸네일
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: _MapStylePainter(style),
+                          ),
                         ),
-                      ),
-                      child: Icon(
-                        icon,
-                        size: 28,
-                        color: isActive ? Colors.white : AppColors.greyLight,
-                      ),
+                        // 텍스트 영역
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  overlayBg.withValues(alpha: 0.0),
+                                  overlayBg.withValues(alpha: 0.96),
+                                ],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: textColor,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                                Text(
+                                  desc,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: textColor.withValues(alpha: 0.65),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // 활성 체크
+                        if (isActive)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: context.primaryColor,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: context.primaryColor.withValues(alpha: 0.5),
+                                    blurRadius: 6,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.check_rounded,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isActive
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color: isActive ? AppColors.dark : AppColors.greyLight,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               );
             }).toList(),
@@ -2092,4 +2783,233 @@ class _LayerSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MapStylePainter extends CustomPainter {
+  final MapStyleOption style;
+  const _MapStylePainter(this.style);
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    switch (style) {
+      case MapStyleOption.standard:
+        _paintStandard(canvas, s);
+      case MapStyleOption.dark:
+        _paintDark(canvas, s);
+      case MapStyleOption.satellite:
+        _paintSatellite(canvas, s);
+      case MapStyleOption.outdoors:
+        _paintOutdoors(canvas, s);
+      case MapStyleOption.light:
+        _paintLight(canvas, s);
+      case MapStyleOption.streets:
+        _paintStreets(canvas, s);
+    }
+  }
+
+  void _paintStandard(Canvas canvas, Size s) {
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFFEDE3CF));
+
+    canvas.drawOval(
+      Rect.fromLTWH(-s.width * 0.08, s.height * 0.50, s.width * 0.48, s.height * 0.65),
+      Paint()..color = const Color(0xFFADD8F0),
+    );
+
+    final parkPaint = Paint()..color = const Color(0xFF9FC98B);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(s.width * 0.54, s.height * 0.14, s.width * 0.30, s.height * 0.24), const Radius.circular(4)),
+      parkPaint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(s.width * 0.10, s.height * 0.28, s.width * 0.16, s.height * 0.12), const Radius.circular(3)),
+      Paint()..color = const Color(0xFFA8D494),
+    );
+
+    final blockPaint = Paint()..color = const Color(0xFFD8CAAC);
+    for (final r in [
+      Rect.fromLTWH(s.width * 0.34, s.height * 0.11, s.width * 0.14, s.height * 0.09),
+      Rect.fromLTWH(s.width * 0.18, s.height * 0.46, s.width * 0.14, s.height * 0.09),
+      Rect.fromLTWH(s.width * 0.62, s.height * 0.44, s.width * 0.16, s.height * 0.08),
+    ]) {
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(2)), blockPaint);
+    }
+
+    canvas.drawLine(Offset(0, s.height * 0.38), Offset(s.width, s.height * 0.52),
+        Paint()..color = Colors.white..strokeWidth = 3.5..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(s.width * 0.42, 0), Offset(s.width * 0.55, s.height),
+        Paint()..color = Colors.white..strokeWidth = 2.0..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(0, s.height * 0.63), Offset(s.width, s.height * 0.68),
+        Paint()..color = Colors.white..strokeWidth = 1.5..strokeCap = StrokeCap.round);
+  }
+
+  void _paintDark(Canvas canvas, Size s) {
+    final bg = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFF0D1220), Color(0xFF141828)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(Rect.fromLTWH(0, 0, 200, 200));
+    canvas.drawRect(Offset.zero & s, bg);
+
+    final blockPaint = Paint()..color = const Color(0xFF1E2840);
+    for (final r in [
+      Rect.fromLTWH(s.width * 0.06, s.height * 0.10, s.width * 0.22, s.height * 0.14),
+      Rect.fromLTWH(s.width * 0.34, s.height * 0.08, s.width * 0.18, s.height * 0.11),
+      Rect.fromLTWH(s.width * 0.60, s.height * 0.12, s.width * 0.28, s.height * 0.16),
+      Rect.fromLTWH(s.width * 0.08, s.height * 0.40, s.width * 0.24, s.height * 0.18),
+      Rect.fromLTWH(s.width * 0.50, s.height * 0.38, s.width * 0.20, s.height * 0.13),
+    ]) {
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(2)), blockPaint);
+    }
+
+    canvas.drawLine(Offset(0, s.height * 0.42), Offset(s.width, s.height * 0.50),
+        Paint()..color = const Color(0xFF7C5FE8).withValues(alpha: 0.28)..strokeWidth = 8..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+    canvas.drawLine(Offset(0, s.height * 0.42), Offset(s.width, s.height * 0.50),
+        Paint()..color = const Color(0xFF9B7FFF)..strokeWidth = 2.5..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(s.width * 0.38, 0), Offset(s.width * 0.45, s.height),
+        Paint()..color = const Color(0xFF4ECDC4).withValues(alpha: 0.45)..strokeWidth = 1.5..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(0, s.height * 0.65), Offset(s.width, s.height * 0.60),
+        Paint()..color = const Color(0xFF4ECDC4).withValues(alpha: 0.28)..strokeWidth = 1.2..strokeCap = StrokeCap.round);
+
+    for (final (x, y, c) in [
+      (0.28, 0.30, const Color(0xFFFF6B9D)),
+      (0.65, 0.26, const Color(0xFF7CDDFF)),
+      (0.52, 0.56, const Color(0xFFFFD166)),
+    ]) {
+      canvas.drawCircle(Offset(s.width * x, s.height * y), 4,
+          Paint()..color = c.withValues(alpha: 0.4)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+      canvas.drawCircle(Offset(s.width * x, s.height * y), 2, Paint()..color = c);
+    }
+  }
+
+  void _paintSatellite(Canvas canvas, Size s) {
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFF1D3D28));
+
+    for (final (rect, color) in [
+      (Rect.fromLTWH(0, 0, s.width * 0.55, s.height * 0.50), const Color(0xFF163020)),
+      (Rect.fromLTWH(s.width * 0.40, s.height * 0.45, s.width * 0.60, s.height * 0.55), const Color(0xFF254035)),
+      (Rect.fromLTWH(s.width * 0.10, s.height * 0.60, s.width * 0.35, s.height * 0.40), const Color(0xFF2A4A35)),
+    ]) {
+      canvas.drawPath(Path()..addOval(rect), Paint()..color = color);
+    }
+
+    final urbanPaint = Paint()..color = const Color(0xFF3A4A42);
+    canvas.drawRect(Rect.fromLTWH(s.width * 0.35, s.height * 0.14, s.width * 0.30, s.height * 0.28), urbanPaint);
+    canvas.drawRect(Rect.fromLTWH(s.width * 0.55, s.height * 0.48, s.width * 0.20, s.height * 0.18), urbanPaint);
+
+    final bldPaint = Paint()..color = const Color(0xFF5A6E60);
+    for (final r in [
+      Rect.fromLTWH(s.width * 0.37, s.height * 0.17, s.width * 0.08, s.height * 0.07),
+      Rect.fromLTWH(s.width * 0.48, s.height * 0.20, s.width * 0.10, s.height * 0.06),
+      Rect.fromLTWH(s.width * 0.42, s.height * 0.28, s.width * 0.12, s.height * 0.08),
+      Rect.fromLTWH(s.width * 0.57, s.height * 0.50, s.width * 0.09, s.height * 0.07),
+    ]) {
+      canvas.drawRect(r, bldPaint);
+    }
+
+    canvas.drawLine(Offset(0, s.height * 0.44), Offset(s.width, s.height * 0.48),
+        Paint()..color = Colors.white.withValues(alpha: 0.55)..strokeWidth = 1.5..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(s.width * 0.50, 0), Offset(s.width * 0.52, s.height),
+        Paint()..color = Colors.white.withValues(alpha: 0.35)..strokeWidth = 1.0..strokeCap = StrokeCap.round);
+  }
+
+  void _paintOutdoors(Canvas canvas, Size s) {
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFFF2E8CC));
+
+    final hillPath = Path()
+      ..moveTo(s.width * 0.45, 0)
+      ..lineTo(s.width, 0)
+      ..lineTo(s.width, s.height * 0.55)
+      ..quadraticBezierTo(s.width * 0.70, s.height * 0.30, s.width * 0.45, 0)
+      ..close();
+    canvas.drawPath(hillPath, Paint()..color = const Color(0xFF8FBF6E));
+
+    for (final (offset, alpha) in [
+      (0.20, 0.40),
+      (0.32, 0.50),
+      (0.44, 0.60),
+      (0.56, 0.70),
+    ]) {
+      final path = Path()
+        ..moveTo(0, s.height * (offset + 0.04))
+        ..cubicTo(s.width * 0.25, s.height * (offset - 0.05), s.width * 0.65, s.height * (offset + 0.07), s.width, s.height * (offset + 0.02));
+      canvas.drawPath(path, Paint()..color = const Color(0xFFC4935A).withValues(alpha: alpha)..strokeWidth = 1.2..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
+    }
+
+    final trailPath = Path()
+      ..moveTo(s.width * 0.15, s.height * 0.72)
+      ..quadraticBezierTo(s.width * 0.40, s.height * 0.50, s.width * 0.68, s.height * 0.30)
+      ..quadraticBezierTo(s.width * 0.82, s.height * 0.18, s.width * 0.90, s.height * 0.08);
+    canvas.drawPath(trailPath, Paint()..color = const Color(0xFFE07B3A)..strokeWidth = 2.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
+
+    final streamPath = Path()
+      ..moveTo(0, s.height * 0.55)
+      ..quadraticBezierTo(s.width * 0.25, s.height * 0.58, s.width * 0.40, s.height * 0.72)
+      ..quadraticBezierTo(s.width * 0.55, s.height * 0.86, s.width * 0.60, s.height);
+    canvas.drawPath(streamPath, Paint()..color = const Color(0xFF6BAED6)..strokeWidth = 2.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
+  }
+
+  void _paintLight(Canvas canvas, Size s) {
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFFF6F3EC));
+
+    canvas.drawOval(
+      Rect.fromLTWH(-s.width * 0.04, s.height * 0.54, s.width * 0.44, s.height * 0.55),
+      Paint()..color = const Color(0xFFCDE8F5),
+    );
+
+    final blockPaint = Paint()..color = const Color(0xFFE8E2D6);
+    for (final r in [
+      Rect.fromLTWH(s.width * 0.38, s.height * 0.10, s.width * 0.28, s.height * 0.22),
+      Rect.fromLTWH(s.width * 0.10, s.height * 0.22, s.width * 0.20, s.height * 0.18),
+      Rect.fromLTWH(s.width * 0.60, s.height * 0.40, s.width * 0.32, s.height * 0.20),
+    ]) {
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(2)), blockPaint);
+    }
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(s.width * 0.50, s.height * 0.14, s.width * 0.22, s.height * 0.18), const Radius.circular(3)),
+      Paint()..color = const Color(0xFFD4EABC),
+    );
+
+    canvas.drawLine(Offset(0, s.height * 0.40), Offset(s.width, s.height * 0.46),
+        Paint()..color = const Color(0xFFD8D0C0)..strokeWidth = 3.0..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(s.width * 0.45, 0), Offset(s.width * 0.52, s.height),
+        Paint()..color = const Color(0xFFDDD8CE)..strokeWidth = 1.8..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(0, s.height * 0.62), Offset(s.width, s.height * 0.65),
+        Paint()..color = const Color(0xFFDDD8CE)..strokeWidth = 1.2..strokeCap = StrokeCap.round);
+  }
+
+  void _paintStreets(Canvas canvas, Size s) {
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFFFAFAF6));
+
+    final blockPaint = Paint()..color = const Color(0xFFF0EAD8);
+    for (final r in [
+      Rect.fromLTWH(0, 0, s.width * 0.36, s.height * 0.38),
+      Rect.fromLTWH(s.width * 0.42, 0, s.width, s.height * 0.38),
+      Rect.fromLTWH(0, s.height * 0.44, s.width * 0.36, s.height),
+      Rect.fromLTWH(s.width * 0.42, s.height * 0.44, s.width, s.height),
+    ]) {
+      canvas.drawRect(r, blockPaint);
+    }
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(s.width * 0.08, s.height * 0.08, s.width * 0.22, s.height * 0.24), const Radius.circular(3)),
+      Paint()..color = const Color(0xFFBCDFA4),
+    );
+
+    canvas.drawLine(Offset(0, s.height * 0.41), Offset(s.width, s.height * 0.41),
+        Paint()..color = const Color(0xFF4A90D9)..strokeWidth = 4.5..strokeCap = StrokeCap.square);
+    canvas.drawLine(Offset(s.width * 0.39, 0), Offset(s.width * 0.39, s.height),
+        Paint()..color = const Color(0xFFD4CCB8)..strokeWidth = 1.8..strokeCap = StrokeCap.square);
+    canvas.drawLine(Offset(0, s.height * 0.70), Offset(s.width, s.height * 0.70),
+        Paint()..color = const Color(0xFFDDD6C4)..strokeWidth = 1.2..strokeCap = StrokeCap.square);
+    canvas.drawLine(Offset(s.width * 0.68, 0), Offset(s.width * 0.68, s.height),
+        Paint()..color = const Color(0xFFDDD6C4)..strokeWidth = 1.2..strokeCap = StrokeCap.square);
+
+    canvas.drawCircle(Offset(s.width * 0.39, s.height * 0.41), 3.5,
+        Paint()..color = const Color(0xFF4A90D9));
+  }
+
+  @override
+  bool shouldRepaint(_MapStylePainter old) => old.style != style;
 }

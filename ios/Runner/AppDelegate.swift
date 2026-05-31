@@ -12,5 +12,7 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // applicationRegistrar 는 앱 레벨 채널용 non-nullable messenger 를 제공하는 공식 경로.
+    PinlogDeepLinkChannel.shared.setup(messenger: engineBridge.applicationRegistrar.messenger())
   }
 }

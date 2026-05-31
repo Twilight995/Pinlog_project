@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 26" fill="none">
+  <!-- 숫자 5 -->
+  <text x="1" y="23"
+        font-family="Inter,-apple-system,'Helvetica Neue',sans-serif"
+        font-size="24" font-weight="800"
+        fill="currentColor" letter-spacing="-1">5</text>
+  <!-- medal.svg (Lucide) — 숫자 바로 옆 -->
+  <g transform="translate(18, 1)">
+    <path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M11 12 5.12 2.2"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m13 12 5.88-9.8"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8 7h8"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="12" cy="17" r="5"
+            stroke="currentColor" stroke-width="2"/>
+    <path d="M12 18v-2h-.5"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

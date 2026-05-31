@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 122" fill="none">
+  <!-- 왼쪽 리본 스트랩 -->
+  <path d="M13 4 L39 4 L51 56 L25 56 Z"
+        stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+  <!-- 오른쪽 리본 스트랩 -->
+  <path d="M87 4 L61 4 L49 56 L75 56 Z"
+        stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+  <!-- 메달 원 -->
+  <circle cx="50" cy="91" r="27"
+          stroke="currentColor" stroke-width="5"/>
+  <!-- 숫자 5 -->
+  <text x="50" y="103"
+        text-anchor="middle"
+        font-family="Inter,-apple-system,'Helvetica Neue',sans-serif"
+        font-size="30" font-weight="800"
+        fill="currentColor">5</text>
+</svg>

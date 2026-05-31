@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 앱 전역 바텀시트 — 스프링 슬라이드업 애니메이션
+/// 앱 전역 바텀시트 — iOS 네이티브 느낌의 슬라이드업 애니메이션
 Future<T?> showAppSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -36,19 +36,19 @@ class _SpringSheetWrapperState extends State<_SpringSheetWrapper>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: const Duration(milliseconds: 360),
     );
 
-    // 슬라이드: 아래 → 제자리, easeOutBack 으로 살짝 오버슈트
+    // 슬라이드: 아래 → 제자리, easeOutQuart — 오버슈트 없이 빠르고 부드럽게
     _slideAnim = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack),
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutQuart),
     );
 
-    // 페이드: 0 → 1, 앞 60% 구간에서만 처리 (이후 1.0 유지)
+    // 페이드: 앞 55% 구간에서 완료 (슬라이드보다 먼저 불투명해져 선명하게 등장)
     _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _ctrl,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+        curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
       ),
     );
 
@@ -66,7 +66,7 @@ class _SpringSheetWrapperState extends State<_SpringSheetWrapper>
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (_, child) => FractionalTranslation(
-        translation: Offset(0, _slideAnim.value * 0.15),
+        translation: Offset(0, _slideAnim.value * 0.30),
         child: Opacity(
           opacity: _fadeAnim.value.clamp(0.0, 1.0),
           child: child,

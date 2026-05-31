@@ -49,6 +49,9 @@ class PinModel extends HiveObject {
   @HiveField(14)
   final String countryCode; // ISO 3166-1 alpha-2, 예: "KR", "JP"
 
+  @HiveField(15)
+  final List<String> taggedFriendCodes;
+
   PinModel({
     required this.id,
     required this.title,
@@ -65,6 +68,7 @@ class PinModel extends HiveObject {
     required this.createdAt,
     this.sharedMapId,
     this.countryCode = '',
+    this.taggedFriendCodes = const [],
   });
 
   PinModel copyWith({
@@ -78,6 +82,7 @@ class PinModel extends HiveObject {
     String? visibility,
     List<String>? photoPaths,
     String? countryCode,
+    List<String>? taggedFriendCodes,
   }) {
     return PinModel(
       id: id,
@@ -95,6 +100,7 @@ class PinModel extends HiveObject {
       createdAt: createdAt,
       sharedMapId: sharedMapId,
       countryCode: countryCode ?? this.countryCode,
+      taggedFriendCodes: taggedFriendCodes ?? this.taggedFriendCodes,
     );
   }
 }

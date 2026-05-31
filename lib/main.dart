@@ -1,25 +1,175 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'application/providers/theme_provider.dart';
+import 'application/services/fcm_service.dart';
+import 'application/services/social_service.dart';
+import 'core/firebase_options.dart';
+import 'core/secrets.dart';
 import 'core/theme/app_theme.dart';
 import 'data/models/pin_model.dart';
 import 'data/repositories/pin_repository.dart';
 import 'data/repositories/profile_repository.dart';
-import 'presentation/screens/main_shell.dart';
+import 'presentation/screens/splash/splash_screen.dart';
 
-const _kMapboxToken = String.fromEnvironment('MAPBOX_TOKEN');
+/// Mapbox 공개 access token.
+///
+/// 우선순위:
+///   1) `--dart-define=MAPBOX_TOKEN=pk.xxx` 로 주입된 값
+///   2) `lib/core/secrets.dart` 의 `Secrets.mapboxPublicToken` (기본값)
+const _mapboxToken = String.fromEnvironment(
+  'MAPBOX_TOKEN',
+  defaultValue: Secrets.mapboxPublicToken,
+);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MapboxOptions.setAccessToken(_kMapboxToken);
+
+  // 이전 세션의 만료된 PKCE 코드가 앱 시작 시 재생되어 발생하는 예외를 무시.
+  // supabase_flutter 는 deep link 를 정상 처리하므로 이 예외는 무해한 노이즈.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    if (error is AuthException) return true; // auth 에러는 앱 크래시 없이 무시
+    return false;
+  };
+
+  // Hot restart 시 네이티브 채널 미준비 → 예외를 삼켜서 앱 계속 실행
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  } catch (_) {}
+
+  // detectSessionInUri: false — supabase_flutter 자체 딥링크 처리 비활성화.
+  // app_links v7 이 FlutterImplicitEngineDelegate 에서 미등록되어 캐시된 URL 을
+  // 앱 시작마다 재처리하면서 만료된 PKCE 코드로 크래시가 발생하는 것을 방지.
+  // OAuth 콜백은 PinlogDeepLinkChannel (SceneDelegate → AppDelegate → Dart) 로 직접 처리.
+  await Supabase.initialize(
+    url: Secrets.supabaseUrl,
+    anonKey: Secrets.supabaseAnonKey,
+    authOptions: const FlutterAuthClientOptions(
+      detectSessionInUri: false,
+    ),
+  );
+
   await Hive.initFlutter();
+  await Hive.openBox<dynamic>('settings');
   await PinRepository.init();
   await ProfileRepository.init();
   await _seedTestRouteIfNeeded();
+  await _seedDemoCategoriesIfNeeded();
+  await _migrateLandmarkPhotosIfNeeded();
+  await _migratePinPhotosV2IfNeeded();
+  await _migratePinPhotosV3IfNeeded();
+  await _migratePinPhotosV4IfNeeded();
+  // 세션이 있을 때만 users 테이블 프로필 동기화 (세션 없으면 SocialService._uid == null → 자동 skip)
+  try {
+    final profileRepo = ProfileRepository();
+    await SocialService().createOrUpdateUser(
+      friendCode: profileRepo.getFriendCode(),
+      nickname: profileRepo.getNickname(),
+    );
+  } catch (_) {}
+
+  // FCM 알림 초기화
+  try { await FCMService.instance.init(); } catch (_) {}
+
+  // Mapbox SDK 초기화 — 토큰 설정
+  if (_mapboxToken.isNotEmpty) {
+    MapboxOptions.setAccessToken(_mapboxToken);
+  } else {
+    debugPrint(
+      '⚠️ MAPBOX_TOKEN 이 비어있습니다. '
+      'flutter run --dart-define=MAPBOX_TOKEN=pk.xxxx 로 주입하세요.',
+    );
+  }
 
   runApp(const ProviderScope(child: PinlogApp()));
+}
+
+// 새 카테고리(cafe/drinking/shopping/drive/running) 데모 핀 (최초 1회만)
+Future<void> _seedDemoCategoriesIfNeeded() async {
+  const sentinel = 'demo_cafe_001';
+  final repo = PinRepository();
+  if (repo.getAll().any((p) => p.id == sentinel)) return;
+
+  final now = DateTime.now();
+  final seeds = <PinModel>[
+    PinModel(
+      id: 'demo_cafe_001',
+      title: '성수동 블루보틀',
+      description: '',
+      latitude: 37.5447, longitude: 127.0557,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 5, pinShape: 'cafe',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now, countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_cafe_002', title: '연남동 작은 카페', description: '',
+      latitude: 37.5654, longitude: 126.9255,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 4, pinShape: 'cafe',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 7)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_cafe_003', title: '망원동 골목 카페', description: '',
+      latitude: 37.5560, longitude: 126.9015,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 3, pinShape: 'cafe',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 14)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_drinking_001', title: '광장시장 육회골목', description: '',
+      latitude: 37.5703, longitude: 126.9999,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 5, pinShape: 'drinking',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 1)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_drinking_002', title: '을지로 노포', description: '',
+      latitude: 37.5667, longitude: 126.9919,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 4, pinShape: 'drinking',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 4)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_shopping_001', title: '성수 콘크리트', description: '',
+      latitude: 37.5447, longitude: 127.0560,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 4, pinShape: 'shopping',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 2)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_drive_001', title: '강변북로 야경', description: '',
+      latitude: 37.5443, longitude: 127.0001,
+      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 5, pinShape: 'drive',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 3)), countryCode: 'KR',
+    ),
+    PinModel(
+      id: 'demo_running_001', title: '서울숲 산책로', description: '',
+      latitude: 37.5443, longitude: 127.0374,
+      emotion: '별로에요', weather: '☀️ 맑음', companions: const [],
+      intensityLevel: 2, pinShape: 'running',
+      visibility: '🌐 전체 공개', photoPaths: const [],
+      createdAt: now.subtract(const Duration(days: 5)), countryCode: 'KR',
+    ),
+  ];
+
+  for (final pin in seeds) {
+    await repo.save(pin);
+  }
 }
 
 // 잠실→한강→뚝섬→광화문 테스트 경로 핀 (2026-04-28, 최초 1회만)
@@ -132,18 +282,131 @@ Future<void> _seedTestRouteIfNeeded() async {
   }
 }
 
-class PinlogApp extends StatelessWidget {
+// 랜드마크 데모 핀에 번들 사진 할당 (최초 1회만)
+Future<void> _migrateLandmarkPhotosIfNeeded() async {
+  const settingsKey = 'landmark_photos_v1';
+  final box = Hive.box<dynamic>('settings');
+  if (box.get(settingsKey) == true) return;
+
+  final repo = PinRepository();
+  const assignments = {
+    'test_route_005': 'asset:lib/img/Kyeonbookgoung.jpeg',  // 경복궁
+    'test_route_006': 'asset:lib/img/GwangWhamoon.jpeg',    // 광화문
+    'seed-6':         'asset:lib/img/Bookchone koreanvillage.webp', // 북촌
+  };
+
+  for (final entry in assignments.entries) {
+    final pin = repo.getById(entry.key);
+    if (pin != null && pin.photoPaths.isEmpty) {
+      await repo.save(pin.copyWith(photoPaths: [entry.value]));
+    }
+  }
+  await box.put(settingsKey, true);
+}
+
+// 신규 핀 사진 일괄 할당 (최초 1회만)
+Future<void> _migratePinPhotosV2IfNeeded() async {
+  const settingsKey = 'pin_photos_v2';
+  final box = Hive.box<dynamic>('settings');
+  if (box.get(settingsKey) == true) return;
+
+  final repo = PinRepository();
+  const assignments = {
+    'test_route_001': 'asset:lib/img/잠실 롯데타워.png',
+    'test_route_002': 'asset:lib/img/잠실 한강공원 .jpg',
+    'test_route_003': 'asset:lib/img/뚝섬 한강공원.png',
+    'test_route_004': 'asset:lib/img/성수동 카페거리.png',
+    'demo_drive_001': 'asset:lib/img/강변북로 야경.png',
+    'demo_running_001': 'asset:lib/img/서울숲 산책로.png',
+    'demo_drinking_001': 'asset:lib/img/광장시장 육회골목.png',
+    'demo_drinking_002': 'asset:lib/img/을지로 노포.png',
+    'demo_shopping_001': 'asset:lib/img/성수 콘크리트.png',
+  };
+
+  for (final entry in assignments.entries) {
+    final pin = repo.getById(entry.key);
+    if (pin != null && pin.photoPaths.isEmpty) {
+      await repo.save(pin.copyWith(photoPaths: [entry.value]));
+    }
+  }
+  await box.put(settingsKey, true);
+}
+
+// 나머지 핀 사진 일괄 할당 (최초 1회만)
+Future<void> _migratePinPhotosV3IfNeeded() async {
+  const settingsKey = 'pin_photos_v3';
+  final box = Hive.box<dynamic>('settings');
+  if (box.get(settingsKey) == true) return;
+
+  final repo = PinRepository();
+  const assignments = {
+    'seed-1': 'asset:lib/img/홍대 연남동 골목 카페.png',
+    'seed-2': 'asset:lib/img/이태원 경리단길 야경.jpeg',
+    'seed-3': 'asset:lib/img/강남 코엑스 별마당 도서관.png',
+    'seed-4': 'asset:lib/img/한강 뚝섬 유원지.jpeg',
+    'seed-5': 'asset:lib/img/성수동 팝업 스토어.png',
+    'demo_cafe_001': 'asset:lib/img/성수동 블루보틀.png',
+    'demo_cafe_002': 'asset:lib/img/연남동 작은 카페.png',
+  };
+
+  for (final entry in assignments.entries) {
+    final pin = repo.getById(entry.key);
+    if (pin != null && pin.photoPaths.isEmpty) {
+      await repo.save(pin.copyWith(photoPaths: [entry.value]));
+    }
+  }
+  await box.put(settingsKey, true);
+}
+
+// 망원동 골목 카페 사진 할당 (최초 1회만)
+Future<void> _migratePinPhotosV4IfNeeded() async {
+  const settingsKey = 'pin_photos_v4';
+  final box = Hive.box<dynamic>('settings');
+  if (box.get(settingsKey) == true) return;
+
+  final repo = PinRepository();
+  const assignments = {
+    'demo_cafe_003': 'asset:lib/img/망원동 골목 카페.png',
+  };
+
+  for (final entry in assignments.entries) {
+    final pin = repo.getById(entry.key);
+    if (pin != null && pin.photoPaths.isEmpty) {
+      await repo.save(pin.copyWith(photoPaths: [entry.value]));
+    }
+  }
+  await box.put(settingsKey, true);
+}
+
+/// 앱 전역에서 FCM 알림 오버레이 & 화면 이동에 사용하는 NavigatorKey
+final GlobalKey<NavigatorState> pinlogNavigatorKey = GlobalKey<NavigatorState>();
+
+class PinlogApp extends ConsumerWidget {
   const PinlogApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Pinlog',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
-      home: const MainShell(),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preset = ref.watch(themePresetProvider);
+    return AppThemeScope(
+      preset: preset,
+      child: MaterialApp(
+        title: 'Pinlog',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
+        navigatorKey: pinlogNavigatorKey,
+        home: const SplashScreen(),
+        builder: (ctx, child) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: isDark
+                ? SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent)
+                : SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
+            child: child!,
+          );
+        },
+      ),
     );
   }
 }

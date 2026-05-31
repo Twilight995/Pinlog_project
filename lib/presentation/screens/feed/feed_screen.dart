@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../application/providers/pin_provider.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
+
+// AppColors.primary/accent → 앱 테마 색상으로 동적 매핑
+Color _resolveColor(Color defined, BuildContext context) {
+  if (defined.toARGB32() == AppColors.primary.toARGB32()) return context.primaryColor;
+  if (defined.toARGB32() == AppColors.accent.toARGB32()) return context.primaryLightColor;
+  return defined;
+}
 
 // ─── 뱃지 모델 ────────────────────────────────────────────────────────────────
 
@@ -309,17 +317,33 @@ class FeedScreen extends ConsumerStatefulWidget {
 class _FeedScreenState extends ConsumerState<FeedScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  final _sc = [ScrollController(), ScrollController()];
+
+  static const _collapseRange = 100.0;
+
+  double get _t {
+    final idx = _tabController.index.clamp(0, 1);
+    final c = _sc[idx];
+    if (!c.hasClients) return 0.0;
+    return (c.offset / _collapseRange).clamp(0.0, 1.0);
+  }
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() => setState(() {}));
+    for (final c in _sc) {
+      c.addListener(() => setState(() {}));
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    for (final c in _sc) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -336,61 +360,138 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
         ? nextTitle.minPins - pins.length
         : 0;
 
-    // 핀 도감: 카테고리별 핀 수
     final Map<String, int> pinCountByShape = {};
     for (final shape in AppConstants.pinShapes) {
       pinCountByShape[shape] = pins.where((p) => p.pinShape == shape).length;
     }
     final unlockedCount = pinCountByShape.values.where((c) => c > 0).length;
 
+    final t = _t;
+    final topPad = MediaQuery.of(context).padding.top;
+
+    // 큰 타이틀: 0→70% 구간에서 페이드아웃
+    final largeOp = 1.0 - Curves.easeInCubic.transform((t / 0.70).clamp(0.0, 1.0));
+    // 작은 타이틀: 55→100% 구간에서 페이드인
+    final smallOp = Curves.easeOutCubic.transform(((t - 0.55) / 0.45).clamp(0.0, 1.0));
+
     return Scaffold(
       backgroundColor: context.bgColor,
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: 140,
-            backgroundColor: context.bgColor,
-            surfaceTintColor: Colors.transparent,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 56),
-              title: Text(
-                '수집 도감',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: context.labelColor,
+      body: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 상단 safe area
+              SizedBox(height: topPad),
+              // 작은 타이틀 (고정 44px, 스크롤 시 페이드인)
+              SizedBox(
+                height: 44,
+                child: Center(
+                  child: Opacity(
+                    opacity: smallOp,
+                    child: Text(
+                      '수집 도감',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                        color: context.labelColor,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(58),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 00),
+              // 큰 타이틀 영역 (높이가 줄어듦)
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  heightFactor: 1.0 - t,
+                  child: Opacity(
+                    opacity: largeOp,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '수집 도감',
+                            style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                              color: context.labelColor,
+                              height: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            '나의 순간들을 모아보세요',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: context.labelColor.withValues(alpha: 0.38),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // 탭바 (고정)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                 child: _TabBar(controller: _tabController),
+              ),
+              // 콘텐츠
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _PinDogamTab(
+                      pinCountByShape: pinCountByShape,
+                      unlockedCount: unlockedCount,
+                      totalCount: AppConstants.pinShapes.length,
+                      controller: _sc[0],
+                    ),
+                    _BadgeDogamTab(
+                      pins: pins,
+                      earnedBadges: earnedBadges,
+                      currentTitle: currentTitle,
+                      nextTitle: nextTitle,
+                      toNext: toNext,
+                      controller: _sc[1],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // 하단 페이드
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 110,
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      context.bgColor.withValues(alpha: 0),
+                      context.bgColor.withValues(alpha: 0.92),
+                      context.bgColor,
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
+                  ),
+                ),
               ),
             ),
           ),
         ],
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            // ── 핀 도감 ────────────────────────────────────────────
-            _PinDogamTab(
-              pinCountByShape: pinCountByShape,
-              unlockedCount: unlockedCount,
-              totalCount: AppConstants.pinShapes.length,
-            ),
-            // ── 뱃지 도감 ──────────────────────────────────────────
-            _BadgeDogamTab(
-              pins: pins,
-              earnedBadges: earnedBadges,
-              currentTitle: currentTitle,
-              nextTitle: nextTitle,
-              toNext: toNext,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -429,7 +530,7 @@ class _TabBar extends StatelessWidget {
           ),
           _TabChip(
             icon: Icons.military_tech_rounded,
-            label: '훈장 도감',
+            label: '칭호 도감',
             isActive: controller.index == 1,
             onTap: () => controller.animateTo(1),
           ),
@@ -456,7 +557,7 @@ class _TabChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = context.isDark;
     // 선택된 탭: 라이트모드=흰 카드 + 그림자, 다크모드=밝은 다크 카드 + 그림자
-    final activeCardColor = isDark ? const Color(0xFF3A3A3C) : Colors.white;
+    final activeCardColor = isDark ? AppColors.surface : Colors.white;
     final activeTextColor = isDark ? Colors.white : AppColors.dark;
     final inactiveTextColor = context.subLabelColor;
 
@@ -526,20 +627,25 @@ class _PinDogamTab extends StatelessWidget {
   final Map<String, int> pinCountByShape;
   final int unlockedCount;
   final int totalCount;
+  final ScrollController controller;
 
   const _PinDogamTab({
     required this.pinCountByShape,
     required this.unlockedCount,
     required this.totalCount,
+    required this.controller,
   });
 
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
+      controller: controller,
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
+        // ── 수집 현황 헤더 ──────────────────────────────────────────────────
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
             child: Row(
               children: [
                 Text(
@@ -552,20 +658,17 @@ class _PinDogamTab extends StatelessWidget {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: context.primaryColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${(unlockedCount / totalCount * 100).round()}%',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
+                      color: context.primaryColor,
                     ),
                   ),
                 ),
@@ -573,28 +676,49 @@ class _PinDogamTab extends StatelessWidget {
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
-              childAspectRatio: 0.95,
+
+        // ── 전체 도감 컨테이너 (카드 하나로) ───────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+            child: Container(
+              decoration: BoxDecoration(
+                color: context.cardBg,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(14),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 6,
+                  crossAxisSpacing: 6,
+                  childAspectRatio: 0.88,
+                ),
+                itemCount: AppConstants.pinShapes.length,
+                itemBuilder: (context, i) {
+                  final shape = AppConstants.pinShapes[i];
+                  final count = pinCountByShape[shape] ?? 0;
+                  final unlocked = count > 0;
+                  final svgPath = AppConstants.pinShapeSvgs[shape] ?? '';
+                  final name = AppConstants.pinShapeNames[shape] ?? shape;
+                  return _PinCategoryItem(
+                    svgPath: svgPath,
+                    name: name,
+                    count: count,
+                    unlocked: unlocked,
+                  );
+                },
+              ),
             ),
-            delegate: SliverChildBuilderDelegate((context, i) {
-              final shape = AppConstants.pinShapes[i];
-              final count = pinCountByShape[shape] ?? 0;
-              final unlocked = count > 0;
-              final emoji = AppConstants.pinShapeEmojis[shape] ?? '📍';
-              final name = AppConstants.pinShapeNames[shape] ?? shape;
-              return _PinCategoryCard(
-                emoji: emoji,
-                name: name,
-                count: count,
-                unlocked: unlocked,
-              );
-            }, childCount: AppConstants.pinShapes.length),
           ),
         ),
       ],
@@ -602,93 +726,112 @@ class _PinDogamTab extends StatelessWidget {
   }
 }
 
-// ─── 핀 카테고리 카드 (목업 스타일) ──────────────────────────────────────────
+// ─── 핀 카테고리 아이템 (컨테이너 없이, 전체 그리드가 하나의 카드) ──────────
 
-class _PinCategoryCard extends StatelessWidget {
-  final String emoji;
+class _PinCategoryItem extends StatelessWidget {
+  final String svgPath;
   final String name;
   final int count;
   final bool unlocked;
 
-  const _PinCategoryCard({
-    required this.emoji,
+  const _PinCategoryItem({
+    required this.svgPath,
     required this.name,
     required this.count,
     required this.unlocked,
   });
 
-  static const _ringColor = Color(0xFFFFCC00); // 금색 링
-
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: context.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: unlocked
-                ? _ringColor.withValues(alpha: 0.12)
-                : Colors.black.withValues(alpha: 0.04),
-            blurRadius: unlocked ? 16 : 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // 아이콘 원형
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: unlocked ? Colors.white : const Color(0xFF3A3A3A),
-              border: Border.all(
-                color: unlocked ? _ringColor : const Color(0xFF888888),
-                width: unlocked ? 3.5 : 2.0,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 62,
+          height: 62,
+          child: Stack(
+            children: [
+              // 원형 배경 + 아이콘
+              Container(
+                width: 62,
+                height: 62,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: unlocked
+                      ? (context.isDark ? const Color(0xFF2D2D2D) : Colors.white)
+                      : Colors.white.withValues(alpha: 0.60),
+                  border: Border.all(
+                    color: unlocked
+                        ? context.primaryColor
+                        : Colors.black.withValues(alpha: 0.10),
+                    width: unlocked ? 2.5 : 1.2,
+                  ),
+                  boxShadow: unlocked
+                      ? [BoxShadow(color: context.primaryColor.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))]
+                      : [],
+                ),
+                child: Center(
+                  child: svgPath.isNotEmpty
+                      ? Opacity(
+                          opacity: unlocked ? 1.0 : 0.25,
+                          child: SvgPicture.asset(svgPath, width: 30, height: 30),
+                        )
+                      : const Icon(Icons.place_rounded, size: 28, color: Color(0xFFFFCC00)),
+                ),
               ),
-              boxShadow: unlocked
-                  ? [
-                      BoxShadow(
-                        color: _ringColor.withValues(alpha: 0.25),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
+              // 잠금 배지 (우하단)
+              if (!unlocked)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        width: 1,
                       ),
-                    ]
-                  : [],
-            ),
-            child: Center(
-              child: unlocked
-                  ? Text(emoji, style: const TextStyle(fontSize: 40))
-                  : const Icon(
-                      Icons.lock_rounded,
-                      size: 34,
-                      color: Color(0xFFFFCC00),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.10),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
                     ),
-            ),
+                    child: const Center(
+                      child: Icon(Icons.lock_rounded, size: 11, color: Color(0xFFAAAAAA)),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            name,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: unlocked ? context.labelColor : AppColors.grey,
-            ),
+        ),
+        const SizedBox(height: 7),
+        Text(
+          name,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: unlocked ? context.labelColor : AppColors.grey,
           ),
-          const SizedBox(height: 3),
-          Text(
-            unlocked ? '$count곳 기록' : '아직 미수집',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: unlocked ? AppColors.primary : AppColors.greyPale,
-            ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          unlocked ? '$count곳' : '미수집',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: unlocked ? context.primaryColor : AppColors.greyPale,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -701,6 +844,7 @@ class _BadgeDogamTab extends StatelessWidget {
   final _TitleDef currentTitle;
   final _TitleDef nextTitle;
   final int toNext;
+  final ScrollController controller;
 
   const _BadgeDogamTab({
     required this.pins,
@@ -708,6 +852,7 @@ class _BadgeDogamTab extends StatelessWidget {
     required this.currentTitle,
     required this.nextTitle,
     required this.toNext,
+    required this.controller,
   });
 
   void _showDetail(BuildContext context, _BadgeDef badge, bool earned) {
@@ -722,6 +867,8 @@ class _BadgeDogamTab extends StatelessWidget {
     final lockedBadges = _badges.where((b) => !b.earned(pins)).toList();
 
     return CustomScrollView(
+      controller: controller,
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
@@ -800,6 +947,8 @@ class _TitleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = _resolveColor(titleDef.color, context);
+    final nextColor = nextTitle != null ? _resolveColor(nextTitle!.color, context) : color;
     final progress = nextTitle != null && nextTitle!.minPins > 0
         ? (pinCount - titleDef.minPins) /
               (nextTitle!.minPins - titleDef.minPins)
@@ -812,12 +961,12 @@ class _TitleCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            titleDef.color.withValues(alpha: 0.15),
-            titleDef.color.withValues(alpha: 0.05),
+            color.withValues(alpha: 0.15),
+            color.withValues(alpha: 0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: titleDef.color.withValues(alpha: 0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -825,7 +974,7 @@ class _TitleCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: titleDef.color,
+              color: color,
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Text(
@@ -843,7 +992,7 @@ class _TitleCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
-              color: titleDef.color,
+              color: color,
             ),
           ),
           const SizedBox(height: 4),
@@ -869,7 +1018,7 @@ class _TitleCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: nextTitle!.color,
+                    color: nextColor,
                   ),
                 ),
               ],
@@ -881,7 +1030,7 @@ class _TitleCard extends StatelessWidget {
                 value: progress.clamp(0.0, 1.0),
                 minHeight: 6,
                 backgroundColor: context.progressBg,
-                valueColor: AlwaysStoppedAnimation<Color>(titleDef.color),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
             ),
           ],
@@ -951,6 +1100,7 @@ class _BadgeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = _resolveColor(badge.color, context);
     return GestureDetector(
       onTap: onTap,
       child: AnimatedOpacity(
@@ -963,7 +1113,7 @@ class _BadgeCard extends StatelessWidget {
             boxShadow: earned
                 ? [
                     BoxShadow(
-                      color: badge.color.withValues(alpha: 0.15),
+                      color: color.withValues(alpha: 0.15),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -978,14 +1128,14 @@ class _BadgeCard extends StatelessWidget {
                 height: 52,
                 decoration: BoxDecoration(
                   color: earned
-                      ? badge.color.withValues(alpha: 0.12)
+                      ? color.withValues(alpha: 0.12)
                       : context.emptyStateBg,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   earned ? badge.icon : Icons.lock_rounded,
                   size: 26,
-                  color: earned ? badge.color : AppColors.grey,
+                  color: earned ? color : AppColors.grey,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1021,6 +1171,7 @@ class _BadgeDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = _resolveColor(badge.color, context);
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       padding: const EdgeInsets.all(24),
@@ -1036,14 +1187,14 @@ class _BadgeDetailSheet extends StatelessWidget {
             height: 80,
             decoration: BoxDecoration(
               color: earned
-                  ? badge.color.withValues(alpha: 0.12)
+                  ? color.withValues(alpha: 0.12)
                   : context.emptyStateBg,
               shape: BoxShape.circle,
             ),
             child: Icon(
               earned ? badge.icon : Icons.lock_rounded,
               size: 40,
-              color: earned ? badge.color : AppColors.grey,
+              color: earned ? color : AppColors.grey,
             ),
           ),
           const SizedBox(height: 16),
@@ -1067,7 +1218,7 @@ class _BadgeDetailSheet extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             decoration: BoxDecoration(
               color: earned
-                  ? badge.color.withValues(alpha: 0.08)
+                  ? color.withValues(alpha: 0.08)
                   : context.emptyStateBg,
               borderRadius: BorderRadius.circular(12),
             ),
@@ -1079,7 +1230,7 @@ class _BadgeDetailSheet extends StatelessWidget {
                       ? Icons.check_circle_rounded
                       : Icons.radio_button_unchecked_rounded,
                   size: 16,
-                  color: earned ? badge.color : AppColors.grey,
+                  color: earned ? color : AppColors.grey,
                 ),
                 const SizedBox(width: 8),
                 Text(

@@ -23,9 +23,9 @@ class FilterSheet extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.tune, color: AppColors.primary, size: 20),
+              Icon(Icons.tune, color: context.primaryColor, size: 20),
               const SizedBox(width: 8),
-              const Text('맞춤 지도 뷰', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              const Text('핀 필터', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
             ],
           ),
           const SizedBox(height: 4),
@@ -72,8 +72,8 @@ class FilterSheet extends ConsumerWidget {
             child: ElevatedButton(
               onPressed: onClose,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.dark,
+                backgroundColor: context.primaryColor,
+                foregroundColor: context.themePreset.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 elevation: 0,
@@ -95,34 +95,53 @@ class _FilterChip extends StatelessWidget {
 
   const _FilterChip({required this.label, required this.isActive, required this.onTap, this.isEmotion = false});
 
+  static const _visibilityIcons = {
+    '🌐 전체 공개': (Icons.public_rounded, '전체 공개'),
+    '👥 친구 공개': (Icons.people_outline_rounded, '친구 공개'),
+    '🔒 나만 보기': (Icons.lock_outline_rounded, '나만 보기'),
+  };
+
   @override
   Widget build(BuildContext context) {
+    final visInfo = _visibilityIcons[label];
+    final chipColor = isActive ? context.themePreset.onPrimary : AppColors.greyLight;
+
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isActive
-              ? (isEmotion ? AppColors.primary : AppColors.dark)
-              : context.chipBg,
+          color: isActive ? context.primaryColor : context.chipBg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isActive
-                ? (isEmotion ? AppColors.primary : AppColors.dark)
-                : context.chipBorder,
+            color: isActive ? context.primaryColor : context.chipBorder,
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: isActive
-                ? (isEmotion ? AppColors.dark : Colors.white)
-                : AppColors.greyLight,
-          ),
-        ),
+        child: visInfo != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(visInfo.$1, size: 13, color: chipColor),
+                  const SizedBox(width: 4),
+                  Text(
+                    visInfo.$2,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: chipColor,
+                    ),
+                  ),
+                ],
+              )
+            : Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: chipColor,
+                ),
+              ),
       ),
     );
   }

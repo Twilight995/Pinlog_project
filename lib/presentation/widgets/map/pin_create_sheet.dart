@@ -34,13 +34,8 @@ class PinCreateSheet extends ConsumerStatefulWidget {
 
 class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
   late final TextEditingController _titleCtrl;
-  late final TextEditingController _descCtrl;
   late final TextEditingController _companionCtrl;
-  late String _selectedWeather;
-  late String _selectedShape;
   late String _selectedVisibility;
-  late String _selectedEmotion;
-  late int _intensity;
   late List<String> _companions;
   late List<String> _photoPaths;
   late DateTime _selectedDate;
@@ -53,22 +48,13 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
 
   bool get _isEditing => widget.editPin != null;
 
-  // AppConstants.pinShapeEmojis 위임 (구버전 포함)
-  static String _emojiFor(String shape) =>
-      AppConstants.pinShapeEmojis[shape] ?? '📍';
-
   @override
   void initState() {
     super.initState();
     final p = widget.editPin;
     _titleCtrl = TextEditingController(text: p?.title ?? '');
-    _descCtrl = TextEditingController(text: p?.description ?? '');
     _companionCtrl = TextEditingController();
-    _selectedWeather = p?.weather ?? AppConstants.weathers.first;
-    _selectedShape = p?.pinShape ?? AppConstants.pinShapes.first;
     _selectedVisibility = p?.visibility ?? AppConstants.visibilities.first;
-    _selectedEmotion = p?.emotion ?? AppConstants.emotions.first;
-    _intensity = p?.intensityLevel ?? 3;
     _companions = List.from(p?.companions ?? []);
     _photoPaths = List.from(p?.photoPaths ?? []);
     _selectedDate = p?.createdAt ?? DateTime.now();
@@ -79,7 +65,6 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
   @override
   void dispose() {
     _titleCtrl.dispose();
-    _descCtrl.dispose();
     _companionCtrl.dispose();
     _locationSearchCtrl.dispose();
     super.dispose();
@@ -180,14 +165,14 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
     final pin = PinModel(
       id: _isEditing ? widget.editPin!.id : const Uuid().v4(),
       title: _titleCtrl.text.trim(),
-      description: _descCtrl.text.trim(),
+      description: '',
       latitude: _location.latitude,
       longitude: _location.longitude,
-      emotion: _selectedEmotion,
-      weather: _selectedWeather,
+      emotion: widget.editPin?.emotion ?? AppConstants.emotions.first,
+      weather: widget.editPin?.weather ?? AppConstants.weathers.first,
       companions: List.from(_companions),
-      intensityLevel: _intensity,
-      pinShape: _selectedShape,
+      intensityLevel: widget.editPin?.intensityLevel ?? 3,
+      pinShape: widget.editPin?.pinShape ?? AppConstants.pinShapes.first,
       visibility: _selectedVisibility,
       photoPaths: List.from(_photoPaths),
       createdAt: _selectedDate,
@@ -309,181 +294,6 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
                           controller: _titleCtrl,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                           decoration: _inputDeco('이곳의 기억을 한 줄로 요약한다면?'),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // 설명
-                        TextField(
-                          controller: _descCtrl,
-                          maxLines: 3,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                          decoration: _inputDeco('이곳의 기억을 한 문장으로 써본다면?'),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // 감정
-                        const _SectionLabel('감정'),
-                        Row(
-                          children: AppConstants.emotions.asMap().entries.map((entry) {
-                            final e = entry.value;
-                            final isLast = entry.key == AppConstants.emotions.length - 1;
-                            final isActive = _selectedEmotion == e;
-                            return Expanded(
-                              child: GestureDetector(
-                                onTap: () => setState(() => _selectedEmotion = e),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  margin: isLast ? EdgeInsets.zero : const EdgeInsets.only(right: 8),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: isActive ? AppEmotions.colorOf(e) : context.chipBg,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: isActive ? AppEmotions.colorOf(e) : context.chipBorder,
-                                    ),
-                                    boxShadow: isActive
-                                        ? [BoxShadow(color: AppEmotions.colorOf(e).withValues(alpha: 0.3), blurRadius: 8)]
-                                        : [],
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Icon(
-                                        e == '좋아요' ? Icons.favorite_rounded : Icons.thumb_down_alt_rounded,
-                                        size: 22,
-                                        color: isActive ? Colors.white : AppColors.greyLight,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        e,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: isActive ? Colors.white : AppColors.greyLight,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // 날씨
-                        const _SectionLabel('지금 날씨'),
-                        Wrap(
-                          spacing: 8, runSpacing: 6,
-                          children: AppConstants.weathers.map((w) => _Chip(
-                            label: w,
-                            isActive: _selectedWeather == w,
-                            activeColor: const Color(0xFFBEE3F8),
-                            onTap: () => setState(() => _selectedWeather = w),
-                          )).toList(),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // 핀 카테고리
-                        const _SectionLabel('핀 카테고리'),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: AppConstants.pinShapes.map((shape) {
-                            final isActive = _selectedShape == shape;
-                            final emoji = _emojiFor(shape);
-                            final name = AppConstants.pinShapeNames[shape] ?? shape;
-                            return GestureDetector(
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                setState(() => _selectedShape = shape);
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: isActive ? AppColors.dark : context.chipBg,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: isActive ? AppColors.dark : context.chipBorder,
-                                  ),
-                                  boxShadow: isActive
-                                      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 8, offset: const Offset(0, 2))]
-                                      : [],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(emoji, style: const TextStyle(fontSize: 16)),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      name,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: isActive ? Colors.white : context.labelColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // 감정 강도
-                        const _SectionLabel('감정 강도'),
-                        Row(
-                          children: [
-                            ...List.generate(5, (i) {
-                              final active = (i + 1) <= _intensity;
-                              return GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _intensity = i + 1);
-                                },
-                                child: AnimatedScale(
-                                  scale: active ? 1.22 : 1.0,
-                                  duration: const Duration(milliseconds: 220),
-                                  curve: Curves.easeOutBack,
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    curve: Curves.easeOut,
-                                    width: 24, height: 24,
-                                    margin: const EdgeInsets.only(right: 10),
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: active ? AppColors.primary : context.emptyStateBg,
-                                      border: Border.all(
-                                        color: active ? AppColors.primary : context.chipBorder,
-                                        width: active ? 0 : 1,
-                                      ),
-                                      boxShadow: active
-                                          ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.45), blurRadius: 8, offset: const Offset(0, 2))]
-                                          : [],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }),
-                            const SizedBox(width: 2),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 180),
-                              transitionBuilder: (child, anim) => FadeTransition(
-                                opacity: anim,
-                                child: SlideTransition(
-                                  position: Tween(begin: const Offset(0, 0.3), end: Offset.zero)
-                                      .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-                                  child: child,
-                                ),
-                              ),
-                              child: Text(
-                                AppConstants.intensityLabels[_intensity],
-                                key: ValueKey(_intensity),
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.greyLight),
-                              ),
-                            ),
-                          ],
                         ),
                         const SizedBox(height: 16),
 

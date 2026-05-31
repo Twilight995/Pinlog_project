@@ -47,7 +47,7 @@ class GlassButton extends StatelessWidget {
             child: Icon(
               icon,
               size: 22,
-              color: isActive ? AppColors.primary : context.labelColor,
+              color: isActive ? context.primaryColor : context.labelColor,
             ),
           ),
         ),
