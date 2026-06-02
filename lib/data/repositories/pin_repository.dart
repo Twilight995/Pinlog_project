@@ -26,7 +26,7 @@ class PinRepository {
         latitude: 37.5584,
         longitude: 126.9240,
         emotion: '좋아요',
-        weather: '☀️ 맑음',
+        weather: '맑음',
         companions: ['혼자'],
         intensityLevel: 4,
         pinShape: 'sprout',
@@ -41,7 +41,7 @@ class PinRepository {
         latitude: 37.5340,
         longitude: 126.9950,
         emotion: '좋아요',
-        weather: '🌬 바람',
+        weather: '바람',
         companions: ['친구'],
         intensityLevel: 5,
         pinShape: 'moon',
@@ -56,7 +56,7 @@ class PinRepository {
         latitude: 37.5126,
         longitude: 127.0590,
         emotion: '좋아요',
-        weather: '☁️ 흐림',
+        weather: '흐림',
         companions: ['혼자'],
         intensityLevel: 3,
         pinShape: 'star',
@@ -71,7 +71,7 @@ class PinRepository {
         latitude: 37.5296,
         longitude: 127.0691,
         emotion: '좋아요',
-        weather: '☀️ 맑음',
+        weather: '맑음',
         companions: ['친구', '연인'],
         intensityLevel: 5,
         pinShape: 'sun',
@@ -86,7 +86,7 @@ class PinRepository {
         latitude: 37.5446,
         longitude: 127.0564,
         emotion: '별로에요',
-        weather: '☁️ 흐림',
+        weather: '흐림',
         companions: ['친구'],
         intensityLevel: 2,
         pinShape: 'cloud',
@@ -101,7 +101,7 @@ class PinRepository {
         latitude: 37.5814,
         longitude: 126.9845,
         emotion: '좋아요',
-        weather: '☀️ 맑음',
+        weather: '맑음',
         companions: ['가족'],
         intensityLevel: 3,
         pinShape: 'cherryBlossom',
@@ -133,6 +133,10 @@ class PinRepository {
 
   Future<void> delete(String id) async {
     await _box.delete(id);
+  }
+
+  Future<void> clearAll() async {
+    await _box.clear();
   }
 
   List<PinModel> getByDate(DateTime date) {

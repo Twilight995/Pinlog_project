@@ -26,7 +26,7 @@ class RecapService {
     final now = DateTime.now();
     final results = <RecapMemory>[];
 
-    for (int y = 1; y <= 3; y++) {
+    for (int y = 1; y <= 10; y++) {
       final targetYear = now.year - y;
       final matches = pins.where((p) =>
           p.createdAt.year == targetYear &&

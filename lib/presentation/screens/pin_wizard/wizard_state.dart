@@ -43,6 +43,12 @@ class WizardData {
   /// 날짜·시간
   DateTime createdAt;
 
+  /// 핀 외부 테두리/글로우 색 (ARGB int). null = 테마 색.
+  int? pinOuterColor;
+
+  /// 핀 내부 바디 색 (ARGB int). null = outer에서 자동 유도.
+  int? pinInnerColor;
+
   WizardData({
     required this.location,
     this.locationName,
@@ -57,6 +63,8 @@ class WizardData {
     String? pinShape,
     this.description = '',
     DateTime? createdAt,
+    this.pinOuterColor,
+    this.pinInnerColor,
   })  : emotion = emotion ?? AppConstants.emotions.first,
         weather = weather ?? AppConstants.weathers.first,
         visibility = visibility ?? AppConstants.visibilities.first,

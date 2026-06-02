@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../data/models/pin_model.dart';
 import '../../data/repositories/pin_repository.dart';
+import '../services/pin_sync_service.dart';
 
 final pinRepositoryProvider = Provider<PinRepository>((ref) => PinRepository());
 
@@ -130,7 +131,7 @@ class PinsNotifier extends StateNotifier<List<PinModel>> {
         latitude: s.lat,
         longitude: s.lng,
         emotion: s.emotion,
-        weather: '☀️ 맑음',
+        weather: '맑음',
         companions: const [],
         intensityLevel: s.intensity,
         pinShape: s.shape,
@@ -156,16 +157,19 @@ class PinsNotifier extends StateNotifier<List<PinModel>> {
   Future<void> add(PinModel pin) async {
     await _repo.save(pin);
     load();
+    PinSyncService.instance.uploadPin(pin).ignore();
   }
 
   Future<void> update(PinModel pin) async {
     await _repo.save(pin);
     load();
+    PinSyncService.instance.uploadPin(pin).ignore();
   }
 
   Future<void> remove(String id) async {
     await _repo.delete(id);
     load();
+    PinSyncService.instance.deletePin(id).ignore();
   }
 
   // 기존 핀 중 countryCode가 비어있는 핀들을 역지오코딩으로 일괄 보정

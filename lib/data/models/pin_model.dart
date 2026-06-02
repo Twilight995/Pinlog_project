@@ -52,6 +52,14 @@ class PinModel extends HiveObject {
   @HiveField(15)
   final List<String> taggedFriendCodes;
 
+  /// 핀 외부 테두리/글로우 색상 (ARGB int). null = 테마 색 따라가기.
+  @HiveField(16)
+  final int? pinOuterColor;
+
+  /// 핀 내부 바디 색상 (ARGB int). null = outer 색에서 자동 유도.
+  @HiveField(17)
+  final int? pinInnerColor;
+
   PinModel({
     required this.id,
     required this.title,
@@ -69,6 +77,8 @@ class PinModel extends HiveObject {
     this.sharedMapId,
     this.countryCode = '',
     this.taggedFriendCodes = const [],
+    this.pinOuterColor,
+    this.pinInnerColor,
   });
 
   PinModel copyWith({
@@ -83,6 +93,8 @@ class PinModel extends HiveObject {
     List<String>? photoPaths,
     String? countryCode,
     List<String>? taggedFriendCodes,
+    Object? pinOuterColor = _sentinel,
+    Object? pinInnerColor = _sentinel,
   }) {
     return PinModel(
       id: id,
@@ -101,6 +113,10 @@ class PinModel extends HiveObject {
       sharedMapId: sharedMapId,
       countryCode: countryCode ?? this.countryCode,
       taggedFriendCodes: taggedFriendCodes ?? this.taggedFriendCodes,
+      pinOuterColor: identical(pinOuterColor, _sentinel) ? this.pinOuterColor : pinOuterColor as int?,
+      pinInnerColor: identical(pinInnerColor, _sentinel) ? this.pinInnerColor : pinInnerColor as int?,
     );
   }
 }
+
+const _sentinel = Object();

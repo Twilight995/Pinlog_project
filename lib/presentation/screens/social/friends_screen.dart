@@ -15,7 +15,8 @@ class FriendsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final firestoreFriends = ref.watch(friendsStreamProvider);
     final localFriends = ref.watch(friendsProvider);
-    final friends = firestoreFriends.valueOrNull ?? localFriends;
+    final supaFriends = firestoreFriends.valueOrNull;
+    final friends = (supaFriends != null && supaFriends.isNotEmpty) ? supaFriends : localFriends;
     final myCode = ref.watch(myFriendCodeProvider);
     final topPad = MediaQuery.of(context).padding.top;
 
@@ -175,7 +176,7 @@ class FriendsScreen extends ConsumerWidget {
                   onRemove: () {
                     final f = friends[i];
                     ref.read(friendsProvider.notifier).removeFriend(f.code);
-                    final uid = f.firestoreUid;
+                    final uid = f.supabaseUid;
                     if (uid != null && uid.isNotEmpty) {
                       ref.read(socialServiceProvider).removeFriend(uid);
                     }

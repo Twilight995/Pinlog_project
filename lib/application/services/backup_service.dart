@@ -55,6 +55,7 @@ class BackupService {
         'visibility': p.visibility,
         'photoPaths': p.photoPaths,
         'countryCode': p.countryCode,
+        'taggedFriendCodes': p.taggedFriendCodes,
         'createdAt': p.createdAt.toIso8601String(),
       };
 
@@ -65,14 +66,15 @@ class BackupService {
         latitude: (m['latitude'] as num).toDouble(),
         longitude: (m['longitude'] as num).toDouble(),
         emotion: m['emotion'] as String? ?? '좋아요',
-        weather: m['weather'] as String? ?? '☀️ 맑음',
+        weather: m['weather'] as String? ?? '맑음',
         companions: (m['companions'] as List?)?.cast<String>() ?? [],
         intensityLevel: m['intensityLevel'] as int? ?? 3,
         pinShape: m['pinShape'] as String? ?? 'star',
         visibility: m['visibility'] as String? ?? '🔒 나만 보기',
         photoPaths: (m['photoPaths'] as List?)?.cast<String>() ?? [],
         countryCode: m['countryCode'] as String? ?? '',
-        createdAt: DateTime.parse(m['createdAt'] as String),
+        taggedFriendCodes: (m['taggedFriendCodes'] as List?)?.cast<String>() ?? [],
+        createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ?? DateTime.now(),
       );
 }
 

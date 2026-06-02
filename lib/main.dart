@@ -17,6 +17,8 @@ import 'core/theme/app_theme.dart';
 import 'data/models/pin_model.dart';
 import 'data/repositories/pin_repository.dart';
 import 'data/repositories/profile_repository.dart';
+import 'presentation/screens/auth/sign_in_screen.dart';
+import 'presentation/screens/main_shell.dart';
 import 'presentation/screens/splash/splash_screen.dart';
 
 /// Mapbox 공개 access token.
@@ -35,7 +37,17 @@ void main() async {
   // 이전 세션의 만료된 PKCE 코드가 앱 시작 시 재생되어 발생하는 예외를 무시.
   // supabase_flutter 는 deep link 를 정상 처리하므로 이 예외는 무해한 노이즈.
   PlatformDispatcher.instance.onError = (error, stack) {
-    if (error is AuthException) return true; // auth 에러는 앱 크래시 없이 무시
+    if (error is AuthException) {
+      final msg = error.message.toLowerCase();
+      // 만료된 PKCE 코드 재생으로 인한 무해한 예외만 무시
+      if (msg.contains('pkce') ||
+          msg.contains('code verifier') ||
+          msg.contains('invalid_grant') ||
+          msg.contains('expired')) {
+        return true;
+      }
+      return false;
+    }
     return false;
   };
 
@@ -88,7 +100,12 @@ void main() async {
     );
   }
 
-  runApp(const ProviderScope(child: PinlogApp()));
+  // 스플래시 오버레이 아래에 올바른 화면을 미리 준비하기 위해 앱 시작 전 auth 확인
+  final session = Supabase.instance.client.auth.currentSession;
+  final storedMode = Hive.box<dynamic>('settings').get('auth_mode') as String?;
+  final isAuthenticated = session != null || storedMode == 'demo';
+
+  runApp(ProviderScope(child: PinlogApp(isAuthenticated: isAuthenticated)));
 }
 
 // 새 카테고리(cafe/drinking/shopping/drive/running) 데모 핀 (최초 1회만)
@@ -104,7 +121,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
       title: '성수동 블루보틀',
       description: '',
       latitude: 37.5447, longitude: 127.0557,
-      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      emotion: '좋아요', weather: '맑음', companions: const [],
       intensityLevel: 5, pinShape: 'cafe',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now, countryCode: 'KR',
@@ -112,7 +129,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
     PinModel(
       id: 'demo_cafe_002', title: '연남동 작은 카페', description: '',
       latitude: 37.5654, longitude: 126.9255,
-      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      emotion: '좋아요', weather: '맑음', companions: const [],
       intensityLevel: 4, pinShape: 'cafe',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now.subtract(const Duration(days: 7)), countryCode: 'KR',
@@ -120,7 +137,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
     PinModel(
       id: 'demo_cafe_003', title: '망원동 골목 카페', description: '',
       latitude: 37.5560, longitude: 126.9015,
-      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      emotion: '좋아요', weather: '맑음', companions: const [],
       intensityLevel: 3, pinShape: 'cafe',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now.subtract(const Duration(days: 14)), countryCode: 'KR',
@@ -128,7 +145,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
     PinModel(
       id: 'demo_drinking_001', title: '광장시장 육회골목', description: '',
       latitude: 37.5703, longitude: 126.9999,
-      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      emotion: '좋아요', weather: '맑음', companions: const [],
       intensityLevel: 5, pinShape: 'drinking',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now.subtract(const Duration(days: 1)), countryCode: 'KR',
@@ -136,7 +153,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
     PinModel(
       id: 'demo_drinking_002', title: '을지로 노포', description: '',
       latitude: 37.5667, longitude: 126.9919,
-      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      emotion: '좋아요', weather: '맑음', companions: const [],
       intensityLevel: 4, pinShape: 'drinking',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now.subtract(const Duration(days: 4)), countryCode: 'KR',
@@ -144,7 +161,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
     PinModel(
       id: 'demo_shopping_001', title: '성수 콘크리트', description: '',
       latitude: 37.5447, longitude: 127.0560,
-      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      emotion: '좋아요', weather: '맑음', companions: const [],
       intensityLevel: 4, pinShape: 'shopping',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now.subtract(const Duration(days: 2)), countryCode: 'KR',
@@ -152,7 +169,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
     PinModel(
       id: 'demo_drive_001', title: '강변북로 야경', description: '',
       latitude: 37.5443, longitude: 127.0001,
-      emotion: '좋아요', weather: '☀️ 맑음', companions: const [],
+      emotion: '좋아요', weather: '맑음', companions: const [],
       intensityLevel: 5, pinShape: 'drive',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now.subtract(const Duration(days: 3)), countryCode: 'KR',
@@ -160,7 +177,7 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
     PinModel(
       id: 'demo_running_001', title: '서울숲 산책로', description: '',
       latitude: 37.5443, longitude: 127.0374,
-      emotion: '별로에요', weather: '☀️ 맑음', companions: const [],
+      emotion: '별로에요', weather: '맑음', companions: const [],
       intensityLevel: 2, pinShape: 'running',
       visibility: '🌐 전체 공개', photoPaths: const [],
       createdAt: now.subtract(const Duration(days: 5)), countryCode: 'KR',
@@ -186,11 +203,11 @@ Future<void> _seedTestRouteIfNeeded() async {
       latitude: 37.5126,
       longitude: 127.1027,
       emotion: '좋아요',
-      weather: '☀️ 맑음',
+      weather: '맑음',
       companions: [],
       intensityLevel: 4,
       pinShape: 'star',
-      visibility: 'public',
+      visibility: '🌐 전체 공개',
       photoPaths: [],
       createdAt: DateTime(2026, 4, 28, 10, 0),
       countryCode: 'KR',
@@ -202,11 +219,11 @@ Future<void> _seedTestRouteIfNeeded() async {
       latitude: 37.5181,
       longitude: 127.0830,
       emotion: '좋아요',
-      weather: '☀️ 맑음',
+      weather: '맑음',
       companions: [],
       intensityLevel: 3,
       pinShape: 'sprout',
-      visibility: 'public',
+      visibility: '🌐 전체 공개',
       photoPaths: [],
       createdAt: DateTime(2026, 4, 28, 11, 30),
       countryCode: 'KR',
@@ -218,11 +235,11 @@ Future<void> _seedTestRouteIfNeeded() async {
       latitude: 37.5307,
       longitude: 127.0672,
       emotion: '좋아요',
-      weather: '☀️ 맑음',
+      weather: '맑음',
       companions: [],
       intensityLevel: 4,
       pinShape: 'cherryBlossom',
-      visibility: 'public',
+      visibility: '🌐 전체 공개',
       photoPaths: [],
       createdAt: DateTime(2026, 4, 28, 13, 0),
       countryCode: 'KR',
@@ -234,11 +251,11 @@ Future<void> _seedTestRouteIfNeeded() async {
       latitude: 37.5440,
       longitude: 127.0560,
       emotion: '좋아요',
-      weather: '☀️ 맑음',
+      weather: '맑음',
       companions: [],
       intensityLevel: 3,
       pinShape: 'moon',
-      visibility: 'public',
+      visibility: '🌐 전체 공개',
       photoPaths: [],
       createdAt: DateTime(2026, 4, 28, 14, 30),
       countryCode: 'KR',
@@ -250,11 +267,11 @@ Future<void> _seedTestRouteIfNeeded() async {
       latitude: 37.5796,
       longitude: 126.9770,
       emotion: '좋아요',
-      weather: '☀️ 맑음',
+      weather: '맑음',
       companions: [],
       intensityLevel: 3,
       pinShape: 'cloud',
-      visibility: 'public',
+      visibility: '🌐 전체 공개',
       photoPaths: [],
       createdAt: DateTime(2026, 4, 28, 16, 0),
       countryCode: 'KR',
@@ -266,11 +283,11 @@ Future<void> _seedTestRouteIfNeeded() async {
       latitude: 37.5759,
       longitude: 126.9769,
       emotion: '좋아요',
-      weather: '🌤️ 맑음',
+      weather: '맑음',
       companions: [],
       intensityLevel: 4,
       pinShape: 'sun',
-      visibility: 'public',
+      visibility: '🌐 전체 공개',
       photoPaths: [],
       createdAt: DateTime(2026, 4, 28, 17, 30),
       countryCode: 'KR',
@@ -382,7 +399,8 @@ Future<void> _migratePinPhotosV4IfNeeded() async {
 final GlobalKey<NavigatorState> pinlogNavigatorKey = GlobalKey<NavigatorState>();
 
 class PinlogApp extends ConsumerWidget {
-  const PinlogApp({super.key});
+  final bool isAuthenticated;
+  const PinlogApp({required this.isAuthenticated, super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -396,7 +414,7 @@ class PinlogApp extends ConsumerWidget {
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.system,
         navigatorKey: pinlogNavigatorKey,
-        home: const SplashScreen(),
+        home: _AppEntry(isAuthenticated: isAuthenticated),
         builder: (ctx, child) {
           final isDark = Theme.of(ctx).brightness == Brightness.dark;
           return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -407,6 +425,51 @@ class PinlogApp extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// 앱 루트 엔트리 — 베이스 화면(MainShell 또는 SignInScreen) 위에
+/// SplashScreen 오버레이를 얹는다. 스플래시가 끝나면 오버레이를
+/// 600ms 페이드아웃해서 제거 — 베이스 지도는 이미 로딩 완료 상태.
+class _AppEntry extends StatefulWidget {
+  final bool isAuthenticated;
+  const _AppEntry({required this.isAuthenticated});
+
+  @override
+  State<_AppEntry> createState() => _AppEntryState();
+}
+
+class _AppEntryState extends State<_AppEntry> {
+  bool _splashFading = false;
+  bool _splashGone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // 베이스 화면은 앱 시작과 동시에 로딩 시작 — 스플래시 뒤에서 준비됨
+        widget.isAuthenticated ? const MainShell() : const SignInScreen(),
+
+        if (!_splashGone)
+          IgnorePointer(
+            ignoring: _splashFading,
+            child: AnimatedOpacity(
+              opacity: _splashFading ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 300),
+              onEnd: () {
+                if (_splashFading && mounted) {
+                  setState(() => _splashGone = true);
+                }
+              },
+              child: SplashScreen(
+                onDone: () {
+                  if (mounted) setState(() => _splashFading = true);
+                },
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

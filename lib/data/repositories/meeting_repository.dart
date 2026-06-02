@@ -135,7 +135,7 @@ class MeetingRepository {
   }
 
   void dispose() {
-    leaveLocationChannel();
+    leaveLocationChannel().ignore();
     _friendLocationCtrl.close();
   }
 }

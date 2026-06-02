@@ -73,13 +73,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
     super.dispose();
   }
 
-  void _handleAppleComingSoon() {
+  void _handleApple() async {
     HapticFeedback.lightImpact();
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.55),
-      builder: (ctx) => const _ComingSoonDialog(),
-    );
+    await ref.read(pinlogAuthProvider.notifier).signInWithApple();
   }
 
   void _handleGoogle() async {
@@ -106,7 +102,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
       builder: (_) => _SocialLoginSheet(
         onApple: () {
           Navigator.pop(context);
-          _handleAppleComingSoon();
+          _handleApple();
         },
         onGoogle: () {
           Navigator.pop(context);
@@ -605,148 +601,6 @@ class _BrandingSection extends StatelessWidget {
             ),
           ],
         ),
-    );
-  }
-}
-
-// ─── Coming Soon 다이얼로그 ───────────────────────────────────────────────────
-
-class _ComingSoonDialog extends StatefulWidget {
-  const _ComingSoonDialog();
-
-  @override
-  State<_ComingSoonDialog> createState() => _ComingSoonDialogState();
-}
-
-class _ComingSoonDialogState extends State<_ComingSoonDialog>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _fade;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 280),
-    );
-    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _scale = Tween<double>(begin: 0.88, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutQuart),
-    );
-    _ctrl.forward();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fade,
-      child: ScaleTransition(
-        scale: _scale,
-        child: Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1232).withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.12),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.30),
-                  blurRadius: 48,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        const Color(0xFF8B5CF6).withValues(alpha: 0.28),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.apple_rounded,
-                    size: 30,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  '곧 지원될 서비스입니다',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    fontFamily: 'Pretendard',
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Apple 로그인은 준비 중입니다.\n조금만 기다려주세요.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.48),
-                    fontFamily: 'Pretendard',
-                    height: 1.55,
-                  ),
-                ),
-                const SizedBox(height: 26),
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    Navigator.of(context).pop();
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF8B5CF6), Color(0xFFD946EF)],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        '확인',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          fontFamily: 'Pretendard',
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

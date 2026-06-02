@@ -10,12 +10,14 @@ class ClusterItem {
   final double lng;
   final int count;
   final String? countryCode; // 지구본 국가 클러스터용
+  final ui.Image? renderedImage; // 전환 오버레이용 사전 렌더 이미지 (Mapbox 어노테이션과 동일)
 
-  const ClusterItem({
+  ClusterItem({
     required this.lat,
     required this.lng,
     required this.count,
     this.countryCode,
+    this.renderedImage,
   });
 
   bool get isCluster => count > 1;
@@ -488,6 +490,24 @@ class _GlobeTransitionPainter extends CustomPainter {
     canvas.translate(pos.dx, pos.dy);
     canvas.scale(scale);
 
+    // 사전 렌더 이미지가 있으면 Mapbox 어노테이션과 동일한 비트맵 사용
+    if (item.renderedImage != null) {
+      final img = item.renderedImage!;
+      final logicalSize = item.isCluster ? 94.0 : 88.0;
+      final half = logicalSize / 2;
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(-half, -half, logicalSize, logicalSize),
+        Paint()
+          ..color = Color.fromARGB((opacity * 255).round(), 255, 255, 255)
+          ..filterQuality = FilterQuality.medium,
+      );
+      canvas.restore();
+      return;
+    }
+
+    // 사전 렌더 이미지 없을 때 fallback — 간소화된 원형 마커
     final r = item.isCluster ? 20.0 : 16.0;
     final bodyColor = _bodyColor();
     final lighter = Color.lerp(themeColor, Colors.white, 0.35)!;

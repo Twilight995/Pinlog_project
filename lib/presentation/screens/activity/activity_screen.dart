@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../application/providers/pin_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/blob.dart';
+import '../../widgets/map/pin_detail_sheet.dart';
 
 // ─── 화면 ─────────────────────────────────────────────────────────────────────
 
@@ -20,12 +22,40 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   late final ScrollController _sc;
   int _currentPage = 0;
 
+  bool _showSearch = false;
+  final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
+  String _searchQuery = '';
+
   static const int _dayCount = 30;
   static const double _collapseRange = 100.0;
 
   double get _t =>
       (_sc.hasClients ? _sc.offset : 0.0).clamp(0.0, _collapseRange) /
       _collapseRange;
+
+  void _openPinDetail(String pinId) {
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.30),
+      transitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (ctx, _, _) => PinDetailSheet(
+        pinId: pinId,
+        onClose: () => Navigator.of(ctx).pop(),
+      ),
+      transitionBuilder: (_, anim, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.88, end: 1.0).animate(
+            CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -43,6 +73,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   void dispose() {
     _pageCtrl.dispose();
     _sc.dispose();
+    _searchCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -69,6 +101,37 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         .length;
     final monthDiff = thisMonthPins - lastMonthPins;
 
+    // 감정 분포
+    final likeCount = pins.where((p) => p.emotion == '좋아요').length;
+    final likePercent = totalPins > 0 ? likeCount / totalPins : 0.0;
+
+    // 최다 활동 요일
+    final weekdayCounts = List<int>.filled(7, 0);
+    for (final pin in pins) {
+      weekdayCounts[pin.createdAt.weekday - 1]++;
+    }
+    var topWeekdayIdx = 0;
+    for (var i = 1; i < 7; i++) {
+      if (weekdayCounts[i] > weekdayCounts[topWeekdayIdx]) topWeekdayIdx = i;
+    }
+    const weekdayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+    final topWeekdayLabel = totalPins > 0 ? weekdayLabels[topWeekdayIdx] : '-';
+    final topWeekdayCount = weekdayCounts[topWeekdayIdx];
+
+    // 검색 결과
+    final List<PinModel> searchResults;
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      searchResults = pins
+          .where((p) =>
+              p.title.toLowerCase().contains(q) ||
+              p.description.toLowerCase().contains(q))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } else {
+      searchResults = const [];
+    }
+
     // 최근 30일 (index 0 = 29일 전, index 29 = 오늘)
     final days = List.generate(
       _dayCount,
@@ -88,68 +151,156 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     final smallOp = Curves.easeOutCubic.transform(((t - 0.55) / 0.45).clamp(0.0, 1.0));
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: context.bgColor,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(height: topPad),
-          // 작은 타이틀 바 (고정)
+          // 고정 헤더 — 검색 활성 시 서치바로 전환
           SizedBox(
             height: 44,
-            child: Center(
-              child: Opacity(
-                opacity: smallOp,
-                child: Text(
-                  '활동',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
-                    color: context.labelColor,
+            child: _showSearch
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchCtrl,
+                            focusNode: _searchFocus,
+                            autofocus: true,
+                            onChanged: (v) =>
+                                setState(() => _searchQuery = v.trim()),
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: context.labelColor,
+                              fontFamily: AppTokens.fontBody,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: '핀 검색...',
+                              hintStyle: TextStyle(
+                                color: context.subLabelColor,
+                                fontSize: 15,
+                              ),
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                size: 18,
+                                color: context.subLabelColor,
+                              ),
+                              isDense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              filled: true,
+                              fillColor: context.cardBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _showSearch = false;
+                              _searchQuery = '';
+                              _searchCtrl.clear();
+                            });
+                            _searchFocus.unfocus();
+                          },
+                          child: Text(
+                            '취소',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: context.primaryColor,
+                              fontFamily: AppTokens.fontBody,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Center(
+                            child: Opacity(
+                              opacity: smallOp,
+                              child: Text(
+                                '활동',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.2,
+                                  color: context.labelColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _showSearch = true);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Icon(
+                              Icons.search_rounded,
+                              size: 22,
+                              color: context.subLabelColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+          // 큰 타이틀 (접힘, 검색 중에는 숨김)
+          if (!_showSearch)
+            ClipRect(
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                heightFactor: 1.0 - t,
+                child: Opacity(
+                  opacity: largeOp,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '활동',
+                          style: TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            color: context.labelColor,
+                            height: 1.0,
+                            fontFamily: AppTokens.fontDisplay,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          '나의 기록을 돌아보세요',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: context.labelColor.withValues(alpha: 0.38),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          // 큰 타이틀 (접힘)
-          ClipRect(
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              heightFactor: 1.0 - t,
-              child: Opacity(
-                opacity: largeOp,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '활동',
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
-                          color: context.labelColor,
-                          height: 1.0,
-                          fontFamily: AppTokens.fontDisplay,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '나의 기록을 돌아보세요',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: context.labelColor.withValues(alpha: 0.38),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
           // 콘텐츠
           Expanded(
             child: Stack(
@@ -190,15 +341,78 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             ),
           ),
 
-          // 캘린더 (접이식)
+          // 통계 카드 행 2: 감정 분포 + 최다 요일
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              child: _ActivityHeatmap(pins: pins),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Row(
+                children: [
+                  _EmotionStatCard(
+                    likeCount: likeCount,
+                    totalCount: totalPins,
+                    likePercent: likePercent,
+                  ),
+                  const SizedBox(width: 10),
+                  _WeekdayStatCard(
+                    topWeekday: topWeekdayLabel,
+                    topCount: totalPins > 0 ? topWeekdayCount : 0,
+                  ),
+                ],
+              ),
             ),
           ),
 
-          // 하루 카드 PageView
+          // 캘린더 (접이식, 검색 중에는 숨김)
+          if (_searchQuery.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                child: _ActivityHeatmap(pins: pins),
+              ),
+            ),
+
+          // 검색 결과 OR 하루 카드 PageView
+          if (_searchQuery.isNotEmpty)
+            SliverToBoxAdapter(
+              child: _searchQuery.isNotEmpty && searchResults.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 48, 20, 0),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 52,
+                            color: context.subLabelColor.withValues(alpha: 0.35),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            '검색 결과가 없어요',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: context.subLabelColor,
+                              fontFamily: AppTokens.fontBody,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      itemCount: searchResults.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (ctx, i) =>
+                          _SearchResultItem(
+                            pin: searchResults[i],
+                            onTap: () => _openPinDetail(searchResults[i].id),
+                          ),
+                    ),
+            ),
+
+          // 하루 카드 PageView (검색 중에는 숨김)
+          if (_searchQuery.isEmpty)
           SliverToBoxAdapter(
             child: Column(
               children: [
@@ -355,15 +569,15 @@ class _PastelStatCard extends StatelessWidget {
 
     return Expanded(
       child: Container(
-        height: 96,
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        height: 100,
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
         decoration: BoxDecoration(
           color: isDark
               ? context.cardBg
-              : primary.withValues(alpha: 0.06),
+              : primary.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: primary.withValues(alpha: isDark ? 0.15 : 0.18),
+            color: primary.withValues(alpha: isDark ? 0.18 : 0.22),
             width: 1.2,
           ),
         ),
@@ -375,20 +589,20 @@ class _PastelStatCard extends StatelessWidget {
               children: [
                 Icon(
                   icon,
-                  size: 13,
+                  size: 14,
                   color: isDark
                       ? context.subLabelColor
-                      : primary.withValues(alpha: 0.6),
+                      : primary.withValues(alpha: 0.7),
                 ),
                 const SizedBox(width: 5),
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: isDark
                         ? context.subLabelColor
-                        : primary.withValues(alpha: 0.65),
+                        : primary.withValues(alpha: 0.75),
                     fontFamily: AppTokens.fontBody,
                   ),
                 ),
@@ -417,7 +631,7 @@ class _PastelStatCard extends StatelessWidget {
                           trendUp
                               ? Icons.arrow_upward_rounded
                               : Icons.arrow_downward_rounded,
-                          size: 9,
+                          size: 11,
                           color: trendUp
                               ? const Color(0xFF16A34A)
                               : const Color(0xFFDC2626),
@@ -426,7 +640,7 @@ class _PastelStatCard extends StatelessWidget {
                         Text(
                           trend!,
                           style: TextStyle(
-                            fontSize: 9,
+                            fontSize: 11,
                             fontWeight: FontWeight.w600,
                             color: trendUp
                                 ? const Color(0xFF16A34A)
@@ -923,6 +1137,272 @@ class _DayCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── 감정 분포 카드 ─────────────────────────────────────────────────────────────
+
+class _EmotionStatCard extends StatelessWidget {
+  final int likeCount;
+  final int totalCount;
+  final double likePercent;
+
+  const _EmotionStatCard({
+    required this.likeCount,
+    required this.totalCount,
+    required this.likePercent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = context.primaryColor;
+    final isDark = context.isDark;
+
+    return Expanded(
+      child: Container(
+        height: 88,
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: isDark ? context.cardBg : primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: primary.withValues(alpha: isDark ? 0.18 : 0.22),
+            width: 1.2,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.favorite_rounded,
+                  size: 14,
+                  color: isDark
+                      ? context.subLabelColor
+                      : primary.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  '감정 분포',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark
+                        ? context.subLabelColor
+                        : primary.withValues(alpha: 0.75),
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  totalCount > 0
+                      ? '좋아요 ${(likePercent * 100).round()}%'
+                      : '-',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: isDark ? Colors.white : context.labelColor,
+                    fontFamily: AppTokens.fontDisplay,
+                    height: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: likePercent,
+                    minHeight: 4,
+                    backgroundColor: isDark
+                        ? Colors.white12
+                        : primary.withValues(alpha: 0.12),
+                    valueColor: AlwaysStoppedAnimation<Color>(primary),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 최다 요일 카드 ─────────────────────────────────────────────────────────────
+
+class _WeekdayStatCard extends StatelessWidget {
+  final String topWeekday;
+  final int topCount;
+
+  const _WeekdayStatCard({required this.topWeekday, required this.topCount});
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = context.primaryColor;
+    final isDark = context.isDark;
+
+    return Expanded(
+      child: Container(
+        height: 88,
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: isDark ? context.cardBg : primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: primary.withValues(alpha: isDark ? 0.18 : 0.22),
+            width: 1.2,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.bar_chart_rounded,
+                  size: 14,
+                  color: isDark
+                      ? context.subLabelColor
+                      : primary.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  '최다 요일',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark
+                        ? context.subLabelColor
+                        : primary.withValues(alpha: 0.75),
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  topWeekday,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? Colors.white : context.labelColor,
+                    fontFamily: AppTokens.fontDisplay,
+                    height: 1.0,
+                  ),
+                ),
+                if (topCount > 0) ...[
+                  const SizedBox(width: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text(
+                      '요일 $topCount개',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: context.subLabelColor,
+                        fontFamily: AppTokens.fontBody,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 검색 결과 아이템 ──────────────────────────────────────────────────────────
+
+class _SearchResultItem extends StatelessWidget {
+  final PinModel pin;
+  final VoidCallback? onTap;
+  const _SearchResultItem({required this.pin, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: context.glassCardShadow,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: context.primaryColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Icon(
+                AppEmotions.iconOf(pin.emotion),
+                size: 18,
+                color: context.primaryColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  pin.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: context.labelColor,
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+                if (pin.description.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    pin.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.subLabelColor,
+                      fontFamily: AppTokens.fontBody,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${pin.createdAt.year}. ${pin.createdAt.month}. ${pin.createdAt.day}',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: context.subLabelColor,
+              fontFamily: AppTokens.fontBody,
+            ),
+          ),
+        ],
+      ),
       ),
     );
   }

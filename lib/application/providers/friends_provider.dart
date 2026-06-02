@@ -11,7 +11,7 @@ class Friend {
   final String code;
   final String name;
   final DateTime addedAt;
-  final String? firestoreUid;
+  final String? supabaseUid;
   /// 1~5 친밀도 단계 (별 개수로 표시)
   final int intimacyLevel;
 
@@ -19,7 +19,7 @@ class Friend {
     required this.code,
     required this.name,
     required this.addedAt,
-    this.firestoreUid,
+    this.supabaseUid,
     this.intimacyLevel = 1,
   });
 
@@ -27,14 +27,14 @@ class Friend {
     String? code,
     String? name,
     DateTime? addedAt,
-    String? firestoreUid,
+    String? supabaseUid,
     int? intimacyLevel,
   }) =>
       Friend(
         code: code ?? this.code,
         name: name ?? this.name,
         addedAt: addedAt ?? this.addedAt,
-        firestoreUid: firestoreUid ?? this.firestoreUid,
+        supabaseUid: supabaseUid ?? this.supabaseUid,
         intimacyLevel: intimacyLevel ?? this.intimacyLevel,
       );
 
@@ -42,7 +42,7 @@ class Friend {
         'code': code,
         'name': name,
         'addedAt': addedAt.toIso8601String(),
-        if (firestoreUid != null) 'firestoreUid': firestoreUid,
+        if (supabaseUid != null) 'firestoreUid': supabaseUid,
         'intimacyLevel': intimacyLevel,
       };
 
@@ -50,7 +50,7 @@ class Friend {
         code: json['code'] as String,
         name: json['name'] as String,
         addedAt: DateTime.parse(json['addedAt'] as String),
-        firestoreUid: json['firestoreUid'] as String?,
+        supabaseUid: json['firestoreUid'] as String?,
         intimacyLevel: (json['intimacyLevel'] as int?) ?? 1,
       );
 }
@@ -86,7 +86,7 @@ class FriendsNotifier extends StateNotifier<List<Friend>> {
         code: normalized,
         name: name.trim(),
         addedAt: DateTime.now(),
-        firestoreUid: uid,
+        supabaseUid: uid,
       ),
     ];
     await _persist();

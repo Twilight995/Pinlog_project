@@ -20,10 +20,5 @@ class AuthService {
   User? get currentUser => _client.auth.currentUser;
   String? get uid => _client.auth.currentUser?.id;
 
-  Future<User?> signInAnonymously() async {
-    final res = await _client.auth.signInAnonymously();
-    return res.user;
-  }
-
   Future<void> signOut() => _client.auth.signOut();
 }

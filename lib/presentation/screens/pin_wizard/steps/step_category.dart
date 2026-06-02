@@ -56,14 +56,28 @@ class _StepCategoryState extends State<StepCategory> {
       ),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        child: _CategoryGrid(
-          selected: widget.data.pinShape,
-          onSelect: (shape) {
-            HapticFeedback.selectionClick();
-            widget.data.pinShape = shape;
-            widget.onChange();
-            setState(() {});
-          },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CategoryGrid(
+              selected: widget.data.pinShape,
+              onSelect: (shape) {
+                HapticFeedback.selectionClick();
+                widget.data.pinShape = shape;
+                widget.onChange();
+                setState(() {});
+              },
+            ),
+            const SizedBox(height: 28),
+            _PinColorPicker(
+              data: widget.data,
+              onChange: () {
+                widget.onChange();
+                setState(() {});
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
         ),
       ),
     );
@@ -147,6 +161,284 @@ class _CategoryGrid extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ─── 핀 색상 피커 ─────────────────────────────────────────────────────────────
+
+const _outerPresets = <Color?>[
+  null,               // 테마 색 (기본)
+  Color(0xFFFF3B30),  // 레드
+  Color(0xFFFF9500),  // 오렌지
+  Color(0xFFFFCC00),  // 옐로우
+  Color(0xFF34C759),  // 그린
+  Color(0xFF00C7BE),  // 틸
+  Color(0xFF007AFF),  // 블루
+  Color(0xFF5856D6),  // 퍼플
+  Color(0xFFFF2D55),  // 핑크
+  Color(0xFFAF52DE),  // 바이올렛
+  Color(0xFFFFFFFF),  // 화이트
+  Color(0xFF8E8E93),  // 그레이
+];
+
+const _innerPresets = <Color?>[
+  null,               // 자동 유도
+  Color(0xFF0A0A0A),  // 블랙
+  Color(0xFF0A1628),  // 다크 네이비
+  Color(0xFF0F2D1F),  // 다크 그린
+  Color(0xFF1A0A28),  // 다크 퍼플
+  Color(0xFF280A10),  // 다크 레드
+  Color(0xFF0A1E28),  // 다크 틸
+  Color(0xFF1C1C1E),  // 다크 그레이
+  Color(0xFF2C2C2E),  // 차콜
+  Color(0xFFE5E5EA),  // 라이트 그레이
+  Color(0xFFFFFFFF),  // 화이트
+];
+
+class _PinColorPicker extends StatelessWidget {
+  final WizardData data;
+  final VoidCallback onChange;
+
+  const _PinColorPicker({required this.data, required this.onChange});
+
+  @override
+  Widget build(BuildContext context) {
+    final ws = context.ws;
+    final themeAccent = context.primaryColor;
+    final outerColor = data.pinOuterColor != null
+        ? Color(data.pinOuterColor!)
+        : themeAccent;
+    final innerColor = data.pinInnerColor != null
+        ? Color(data.pinInnerColor!)
+        : _deriveDarkBody(outerColor);
+
+    final svgPath = AppConstants.pinShapeSvgs[data.pinShape] ?? '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 라벨 + 미리보기
+        Row(
+          children: [
+            Text(
+              '핀 색상',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: ws.muted,
+                letterSpacing: 0.4,
+                fontFamily: AppTokens.fontBody,
+              ),
+            ),
+            const Spacer(),
+            _PinPreview(
+              outerColor: outerColor,
+              innerColor: innerColor,
+              svgPath: svgPath,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // 외부 (테두리/글로우)
+        Text(
+          '테두리 / 글로우',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: ws.muted.withValues(alpha: 0.7),
+            fontFamily: AppTokens.fontBody,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _ColorSwatchRow(
+          presets: _outerPresets,
+          selectedArgb: data.pinOuterColor,
+          themeColor: themeAccent,
+          onSelect: (c) {
+            data.pinOuterColor = c?.toARGB32();
+            onChange();
+          },
+        ),
+        const SizedBox(height: 14),
+
+        // 내부 (바디)
+        Text(
+          '핀 내부',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: ws.muted.withValues(alpha: 0.7),
+            fontFamily: AppTokens.fontBody,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _ColorSwatchRow(
+          presets: _innerPresets,
+          selectedArgb: data.pinInnerColor,
+          themeColor: _deriveDarkBody(outerColor),
+          onSelect: (c) {
+            data.pinInnerColor = c?.toARGB32();
+            onChange();
+          },
+        ),
+      ],
+    );
+  }
+
+  Color _deriveDarkBody(Color accent) {
+    final hsl = HSLColor.fromColor(accent);
+    return hsl
+        .withLightness(0.10)
+        .withSaturation((hsl.saturation * 0.55).clamp(0.0, 1.0))
+        .toColor()
+        .withValues(alpha: 0.96);
+  }
+}
+
+class _PinPreview extends StatelessWidget {
+  final Color outerColor;
+  final Color innerColor;
+  final String svgPath;
+
+  const _PinPreview({
+    required this.outerColor,
+    required this.innerColor,
+    required this.svgPath,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 52.0;
+    final lighter = Color.lerp(outerColor, Colors.white, 0.35)!;
+    final darker = Color.lerp(outerColor, Colors.black, 0.15)!;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // glow
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: outerColor.withValues(alpha: 0.45),
+                  blurRadius: 14,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+          ),
+          // border ring (gradient via ShaderMask)
+          ShaderMask(
+            shaderCallback: (rect) => LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [lighter, darker],
+            ).createShader(rect),
+            child: Container(
+              width: size - 2,
+              height: size - 2,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          // body
+          Container(
+            width: size - 7,
+            height: size - 7,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: innerColor,
+            ),
+          ),
+          // icon
+          if (svgPath.isNotEmpty)
+            SvgPicture.asset(
+              svgPath,
+              width: 18,
+              height: 18,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColorSwatchRow extends StatelessWidget {
+  final List<Color?> presets;
+  final int? selectedArgb;
+  final Color themeColor;
+  final ValueChanged<Color?> onSelect;
+
+  const _ColorSwatchRow({
+    required this.presets,
+    required this.selectedArgb,
+    required this.themeColor,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: presets.map((c) {
+          final argb = c?.toARGB32();
+          final isSelected = selectedArgb == argb;
+          final displayColor = c ?? themeColor;
+
+          return GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onSelect(c);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: const EdgeInsets.only(right: 8),
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: displayColor,
+                border: Border.all(
+                  color: isSelected
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.15),
+                  width: isSelected ? 3 : 1.5,
+                ),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: displayColor.withValues(alpha: 0.6),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        )
+                      ]
+                    : null,
+              ),
+              child: c == null
+                  ? Center(
+                      child: Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 14,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    )
+                  : null,
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }

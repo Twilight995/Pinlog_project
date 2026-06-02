@@ -104,6 +104,8 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
       photoPaths: photoPaths,
       createdAt: _data.createdAt,
       countryCode: countryCode,
+      pinOuterColor: _data.pinOuterColor,
+      pinInnerColor: _data.pinInnerColor,
     );
 
     await ref.read(pinsProvider.notifier).add(pin);

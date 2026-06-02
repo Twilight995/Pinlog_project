@@ -1,17 +1,23 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../../application/providers/donghaeng_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../../../application/providers/pin_provider.dart';
+import '../../../application/providers/profile_provider.dart';
 import '../../../data/models/pin_model.dart';
 import '../common/glass_sheet.dart';
 import 'pin_create_sheet.dart';
@@ -19,15 +25,30 @@ import 'pin_create_sheet.dart';
 class PinDetailSheet extends ConsumerWidget {
   final String pinId;
   final VoidCallback onClose;
+  final PinModel? overridePin;
+  final bool readOnly;
 
-  const PinDetailSheet({super.key, required this.pinId, required this.onClose});
+  const PinDetailSheet({
+    super.key,
+    required this.pinId,
+    required this.onClose,
+    this.overridePin,
+    this.readOnly = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pins = ref.watch(pinsProvider);
-    final pin = pins.where((p) => p.id == pinId).firstOrNull;
+    final PinModel? pin;
+    if (overridePin != null) {
+      pin = overridePin;
+    } else {
+      final pins = ref.watch(pinsProvider);
+      pin = pins.where((p) => p.id == pinId).firstOrNull;
+    }
 
     if (pin == null) return const SizedBox.shrink();
+    // Reassign to non-nullable for closure capture
+    final PinModel p = pin;
 
     return GlassSheet(
       centered: true,
@@ -65,8 +86,8 @@ class PinDetailSheet extends ConsumerWidget {
                   textColor: context.primaryColor.computeLuminance() > 0.35
                       ? const Color(0xFF1A1A1A)
                       : Colors.white),
-              _Badge(label: pin.weather, svgPath: _weatherSvg(pin.weather)),
-              _Badge(label: pin.visibility, svgPath: _visibilitySvg(pin.visibility)),
+              _Badge(label: _weatherLabel(pin.weather), svgPath: _weatherSvg(pin.weather)),
+              _Badge(label: _visibilityLabel(pin.visibility), svgPath: _visibilitySvg(pin.visibility)),
             ],
           ),
           const SizedBox(height: 8),
@@ -101,7 +122,7 @@ class PinDetailSheet extends ConsumerWidget {
                         margin: const EdgeInsets.only(right: 4),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: (i + 1) <= pin.intensityLevel
+                          color: (i + 1) <= p.intensityLevel
                               ? context.primaryColor
                               : context.emptyStateBg,
                         ),
@@ -150,33 +171,42 @@ class PinDetailSheet extends ConsumerWidget {
             const SizedBox(height: 12),
           ],
 
-          // 편집 / 삭제
+          // ── 동행 버튼 (태그된 친구 있고 내 핀인 경우) ─────────────────────
+          if (!readOnly && p.taggedFriendCodes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _DonghaengButton(pin: p, onClose: onClose),
+          ],
+
+          // 액션 버튼 (공유는 항상, 편집/삭제는 내 핀만)
           const Divider(height: 20),
           Row(
             children: [
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () => _openEditSheet(context, ref, pin),
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('편집',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                  style:
-                      TextButton.styleFrom(foregroundColor: AppColors.greyLight),
+              if (!readOnly)
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () => _openEditSheet(context, ref, p),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('편집',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    style: TextButton.styleFrom(
+                        foregroundColor: AppColors.greyLight),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () {
-                    ref.read(pinsProvider.notifier).remove(pin.id);
-                    onClose();
-                  },
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  label: const Text('삭제',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                  style:
-                      TextButton.styleFrom(foregroundColor: AppColors.danger),
+              Expanded(child: _ShareButton(pin: p)),
+              if (!readOnly)
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      ref.read(pinsProvider.notifier).remove(p.id);
+                      onClose();
+                    },
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('삭제',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    style: TextButton.styleFrom(
+                        foregroundColor: AppColors.danger),
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -899,6 +929,279 @@ class _Badge extends StatelessWidget {
                 color: fg),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── 공유 버튼 ────────────────────────────────────────────────────────────────
+
+class _ShareButton extends StatefulWidget {
+  final PinModel pin;
+  const _ShareButton({required this.pin});
+
+  @override
+  State<_ShareButton> createState() => _ShareButtonState();
+}
+
+class _ShareButtonState extends State<_ShareButton> {
+  bool _sharing = false;
+  final _cardKey = GlobalKey();
+
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    HapticFeedback.mediumImpact();
+
+    try {
+      final overlayState = Overlay.of(context);
+      late OverlayEntry entry;
+      entry = OverlayEntry(
+        builder: (_) => Positioned(
+          left: -9999,
+          top: 0,
+          width: 360,
+          child: Material(
+            type: MaterialType.transparency,
+            child: RepaintBoundary(
+              key: _cardKey,
+              child: _ShareCard(pin: widget.pin),
+            ),
+          ),
+        ),
+      );
+      overlayState.insert(entry);
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      Uint8List? pngBytes;
+      final boundary =
+          _cardKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary != null) {
+        final image = await boundary.toImage(pixelRatio: 3.0);
+        final byteData =
+            await image.toByteData(format: ui.ImageByteFormat.png);
+        pngBytes = byteData?.buffer.asUint8List();
+      }
+      entry.remove();
+
+      if (pngBytes != null) {
+        final dir = await getTemporaryDirectory();
+        final file = File(
+            '${dir.path}/pinlog_share_${DateTime.now().millisecondsSinceEpoch}.png');
+        await file.writeAsBytes(pngBytes);
+        if (!mounted) return;
+        await Share.shareXFiles([XFile(file.path)], text: widget.pin.title);
+      }
+    } catch (_) {}
+
+    if (mounted) setState(() => _sharing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: _sharing ? null : _share,
+      icon: _sharing
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.ios_share_rounded, size: 16),
+      label: const Text('공유', style: TextStyle(fontWeight: FontWeight.w700)),
+      style: TextButton.styleFrom(foregroundColor: AppColors.greyLight),
+    );
+  }
+}
+
+// ─── 공유 카드 (오프스크린 렌더링용) ──────────────────────────────────────────
+
+class _ShareCard extends StatelessWidget {
+  final PinModel pin;
+  const _ShareCard({required this.pin});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 360,
+      padding: const EdgeInsets.all(28),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 앱 브랜드
+          Row(
+            children: [
+              const Text(
+                'Pinlog',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white38,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const Spacer(),
+              Icon(
+                AppEmotions.iconOf(pin.emotion),
+                size: 20,
+                color: Colors.white60,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          // 제목
+          Text(
+            pin.title,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              height: 1.3,
+            ),
+          ),
+
+          // 설명
+          if (pin.description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              pin.description,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.white70,
+                height: 1.55,
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 18),
+
+          // 날짜 + 감정 뱃지
+          Row(
+            children: [
+              _ShareBadge(
+                '${pin.createdAt.year}. ${pin.createdAt.month}. ${pin.createdAt.day}',
+              ),
+              const SizedBox(width: 8),
+              _ShareBadge(pin.emotion),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 동행 버튼 ────────────────────────────────────────────────────────────────
+
+class _DonghaengButton extends ConsumerWidget {
+  final PinModel pin;
+  final VoidCallback onClose;
+
+  const _DonghaengButton({required this.pin, required this.onClose});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dongState = ref.watch(donghaengProvider);
+    final isActiveForThisPin =
+        dongState.isActive && dongState.session?.pinId == pin.id;
+    final otherSessionActive =
+        dongState.isActive && dongState.session?.pinId != pin.id;
+    final themeColor = context.primaryColor;
+
+    if (otherSessionActive) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTap: () {
+        if (isActiveForThisPin) {
+          HapticFeedback.lightImpact();
+          ref.read(donghaengProvider.notifier).endSession();
+          onClose();
+          return;
+        }
+        HapticFeedback.mediumImpact();
+        final profile = ref.read(profileProvider);
+        ref.read(donghaengProvider.notifier).startSession(
+          pin,
+          profile.nickname,
+        );
+        onClose();
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          gradient: isActiveForThisPin
+              ? null
+              : LinearGradient(
+                  colors: [
+                    themeColor.withValues(alpha: 0.85),
+                    themeColor,
+                  ],
+                ),
+          color: isActiveForThisPin
+              ? themeColor.withValues(alpha: 0.12)
+              : null,
+          borderRadius: BorderRadius.circular(14),
+          border: isActiveForThisPin
+              ? Border.all(color: themeColor.withValues(alpha: 0.4))
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isActiveForThisPin
+                  ? Icons.location_on_rounded
+                  : Icons.share_location_rounded,
+              size: 16,
+              color: isActiveForThisPin ? themeColor : Colors.white,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              isActiveForThisPin ? '동행 진행 중 (종료)' : '동행 시작',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: isActiveForThisPin ? themeColor : Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareBadge extends StatelessWidget {
+  final String text;
+  const _ShareBadge(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Colors.white70,
+        ),
       ),
     );
   }

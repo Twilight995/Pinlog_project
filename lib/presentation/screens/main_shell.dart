@@ -21,10 +21,12 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
+  // 스플래시 오버레이 뒤에서 로딩되므로 크롬은 처음부터 visible
+  final bool _chromeVisible = true;
+
   @override
   void initState() {
     super.initState();
-    // 첫 빌드 완료 후 On This Day 팝업 검사
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkRecap());
   }
 
@@ -56,11 +58,11 @@ class _MainShellState extends ConsumerState<MainShell> {
         ],
       ),
       bottomNavigationBar: AnimatedOpacity(
-        opacity: isGlobeMode ? 0.0 : 1.0,
-        duration: const Duration(milliseconds: 350),
+        opacity: (_chromeVisible && !isGlobeMode) ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
         child: IgnorePointer(
-          ignoring: isGlobeMode,
+          ignoring: !_chromeVisible || isGlobeMode,
           child: _FloatingNav(
             activeTab: activeTab,
             onTabChanged: (i) => ref.read(activeTabProvider.notifier).state = i,
@@ -92,14 +94,18 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
   int _prev = 0;
   int _dir = 1;
 
-  // 들어오는 탭: 위치 + 스케일 + 페이드
+  // tab 0(MapScreen/PlatformView)에 GlobalKey 부여.
+  // Stack 내 위치가 바뀌어도 Flutter가 element를 이동(move)하므로
+  // 언마운트/리마운트 없이 onMapCreated 중복 호출을 방지.
+  final _mapKey = GlobalKey();
+
+  // 들어오는 탭: 슬라이드 + 스케일
   static final _inSlide = CurveTween(curve: Curves.easeOutCubic);
-  static final _inFade  = CurveTween(curve: const Interval(0.0, 0.6, curve: Curves.easeOut));
   static final _inScale = CurveTween(curve: Curves.easeOutCubic);
 
-  // 나가는 탭: 뒤로 살짝 밀리며 어두워짐
+  // 나가는 탭: 빠르게 사라짐 (겹침 최소화)
   static final _outSlide = CurveTween(curve: Curves.easeInCubic);
-  static final _outFade  = CurveTween(curve: const Interval(0.0, 0.55, curve: Curves.easeIn));
+  static final _outFade  = CurveTween(curve: const Interval(0.0, 0.38, curve: Curves.easeIn));
 
   @override
   void initState() {
@@ -108,7 +114,7 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
     _prev = widget.activeTab;
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 300),
     )..value = 1.0;
   }
 
@@ -129,62 +135,95 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
     super.dispose();
   }
 
+  // Opacity 대신 ColoredBox 오버레이로 페이드 처리.
+  // Mapbox 같은 PlatformView는 Flutter의 Opacity(0~1)를 무시하고
+  // full opacity로 렌더링하여 다른 탭 위에 비침 — 오버레이 방식으로 우회.
+  Widget _withCover(Widget child, double coverAlpha) {
+    if (coverAlpha <= 0.0) return child;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        IgnorePointer(
+          child: ColoredBox(
+            color: Color.fromRGBO(5, 11, 26, coverAlpha.clamp(0.0, 1.0)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // tab i의 실제 child 위젯 (tab 0만 GlobalKey로 래핑)
+  Widget _child(int i) {
+    if (i == 0) {
+      return KeyedSubtree(key: _mapKey, child: widget.children[0]);
+    }
+    return widget.children[i];
+  }
+
+  Widget _buildSlot(
+    int i,
+    double tSlideIn,
+    double tScaleIn,
+    double tSlideOut,
+    double tFadeOut,
+    double w,
+  ) {
+    // 활성 탭: 슬라이드 + 스케일 (dark cover 없음 — 첫 프레임 검정 방지)
+    if (i == _curr) {
+      return Transform.translate(
+        offset: Offset(w * _dir * 0.15 * (1.0 - tSlideIn), 0),
+        child: Transform.scale(
+          scale: 0.94 + 0.06 * tScaleIn,
+          child: _child(i),
+        ),
+      );
+    }
+    // 나가는 탭: 빠르게 cover + 미세 밀림
+    if (i == _prev && _prev != _curr) {
+      return IgnorePointer(
+        child: Transform.translate(
+          offset: Offset(-w * _dir * 0.08 * tSlideOut, 0),
+          child: Transform.scale(
+            scale: 1.0 - 0.03 * tSlideOut,
+            child: _withCover(_child(i), tFadeOut.clamp(0.0, 1.0)),
+          ),
+        ),
+      );
+    }
+    // 비활성: PlatformView(map)는 cover, 나머지는 Offstage
+    if (i == 0) {
+      return IgnorePointer(child: _withCover(_child(0), 1.0));
+    }
+    return Offstage(offstage: true, child: _child(i));
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (ctx, _) {
-        final raw = _ctrl.value;
+        final raw    = _ctrl.value;
         final tSlideIn  = _inSlide.transform(raw);
-        final tFadeIn   = _inFade.transform(raw);
         final tScaleIn  = _inScale.transform(raw);
         final tSlideOut = _outSlide.transform(raw);
         final tFadeOut  = _outFade.transform(raw);
         final w = MediaQuery.sizeOf(ctx).width;
 
+        // _curr를 항상 마지막(최상위 z)에 배치
+        // GlobalKey 덕에 MapScreen이 다른 위치로 이동해도 리마운트 없음
+        final indices = [
+          for (int i = 0; i < widget.children.length; i++)
+            if (i != _curr) i,
+          _curr,
+        ];
+
         return Stack(
           fit: StackFit.expand,
           children: [
-            // MapWidget 같은 native platform view가 Opacity(0)를 무시하고
-            // 배경으로 show-through되는 것을 막기 위한 배경 레이어
-            ColoredBox(color: Theme.of(ctx).scaffoldBackgroundColor),
-            ...List.generate(widget.children.length, (i) {
-            if (i == _curr) {
-              // 들어오는 탭: 25% 이동 슬라이드 + 0.94→1.0 스케일 + 페이드
-              final dx = w * _dir * 0.25 * (1.0 - tSlideIn);
-              final scale = 0.94 + 0.06 * tScaleIn;
-              return Transform.translate(
-                offset: Offset(dx, 0),
-                child: Transform.scale(
-                  scale: scale,
-                  child: Opacity(
-                    opacity: tFadeIn.clamp(0.0, 1.0),
-                    child: widget.children[i],
-                  ),
-                ),
-              );
-            }
-            if (i == _prev && _prev != _curr) {
-              // 나가는 탭: 반대 방향 10% 밀림 + 1.0→0.96 스케일 + 페이드
-              final dx = -w * _dir * 0.10 * tSlideOut;
-              final scale = 1.0 - 0.04 * tSlideOut;
-              return IgnorePointer(
-                child: Transform.translate(
-                  offset: Offset(dx, 0),
-                  child: Transform.scale(
-                    scale: scale,
-                    child: Opacity(
-                      opacity: (1.0 - tFadeOut).clamp(0.0, 1.0),
-                      child: widget.children[i],
-                    ),
-                  ),
-                ),
-              );
-            }
-            return IgnorePointer(
-              child: Opacity(opacity: 0.0, child: widget.children[i]),
-            );
-          }),
+            const ColoredBox(color: Color(0xFF050B1A)),
+            for (final i in indices)
+              _buildSlot(i, tSlideIn, tScaleIn, tSlideOut, tFadeOut, w),
           ],
         );
       },

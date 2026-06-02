@@ -38,16 +38,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   String? _uploadedAvatarUrl;
   bool _uploadingAvatar = false;
 
-  // Step 3 — 전화번호
-  final _phoneCtrl = TextEditingController();
-  final _otpCtrl = TextEditingController();
-  bool _otpSent = false;
-  bool _phoneVerified = false;
-  bool _sendingOtp = false;
-  bool _verifyingOtp = false;
-  String? _phoneError;
-  String? _otpError;
-
   bool _completing = false;
 
   late final AnimationController _slideCtrl;
@@ -96,8 +86,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     _slideCtrl.dispose();
     _nicknameCtrl.dispose();
     _nicknameFocus.dispose();
-    _phoneCtrl.dispose();
-    _otpCtrl.dispose();
     super.dispose();
   }
 
@@ -145,7 +133,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     _animateToStep(1);
   }
 
-  // ── Step 2 → Step 3 ─────────────────────────────────────────────────────────
+  // ── Step 2 → 완료 ──────────────────────────────────────────────────────────
   Future<void> _pickAvatar() async {
     HapticFeedback.lightImpact();
     final picker = ImagePicker();
@@ -227,82 +215,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   void _onNextFromAvatar() {
     HapticFeedback.lightImpact();
-    _animateToStep(2);
-  }
-
-  // ── Step 3 — 전화번호 OTP ────────────────────────────────────────────────────
-  Future<void> _sendOtp() async {
-    final phone = _phoneCtrl.text.trim();
-    if (phone.isEmpty) {
-      setState(() => _phoneError = '전화번호를 입력해주세요');
-      return;
-    }
-    HapticFeedback.lightImpact();
-    setState(() {
-      _sendingOtp = true;
-      _phoneError = null;
-    });
-
-    // 화면 표시 포맷(010-XXXX-XXXX) → E.164 (+821012345678)
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-    final e164 = digits.startsWith('0') ? '+82${digits.substring(1)}' : '+$digits';
-
-    final err =
-        await ref.read(pinlogAuthProvider.notifier).sendPhoneOtp(e164);
-    if (!mounted) return;
-    if (err != null) {
-      setState(() {
-        _phoneError = err;
-        _sendingOtp = false;
-      });
-    } else {
-      setState(() {
-        _otpSent = true;
-        _sendingOtp = false;
-      });
-    }
-  }
-
-  Future<void> _verifyOtp() async {
-    final phone = _phoneCtrl.text.trim();
-    final otp = _otpCtrl.text.trim();
-    if (otp.length < 6) {
-      setState(() => _otpError = '6자리 인증번호를 입력해주세요');
-      return;
-    }
-    HapticFeedback.lightImpact();
-    setState(() {
-      _verifyingOtp = true;
-      _otpError = null;
-    });
-
-    final err =
-        await ref.read(pinlogAuthProvider.notifier).verifyPhoneOtp(phone, otp);
-    if (!mounted) return;
-    if (err != null) {
-      setState(() {
-        _otpError = err;
-        _verifyingOtp = false;
-      });
-    } else {
-      setState(() {
-        _phoneVerified = true;
-        _verifyingOtp = false;
-      });
-      HapticFeedback.mediumImpact();
-    }
+    _complete();
   }
 
   // ── 온보딩 완료 ───────────────────────────────────────────────────────────────
-  Future<void> _complete({String? phone}) async {
+  Future<void> _complete() async {
     if (_completing) return;
-    HapticFeedback.lightImpact();
     setState(() => _completing = true);
 
     await ref.read(pinlogAuthProvider.notifier).completeOnboarding(
           nickname: _nicknameCtrl.text.trim(),
           avatarUrl: _uploadedAvatarUrl ?? widget.initialAvatarUrl,
-          phone: phone,
         );
   }
 
@@ -374,21 +297,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                       uploadingAvatar: _uploadingAvatar,
                                       uploadedAvatarUrl: _uploadedAvatarUrl,
                                       initialAvatarUrl: widget.initialAvatarUrl,
-                                      phoneCtrl: _phoneCtrl,
-                                      otpCtrl: _otpCtrl,
-                                      otpSent: _otpSent,
-                                      phoneVerified: _phoneVerified,
-                                      sendingOtp: _sendingOtp,
-                                      verifyingOtp: _verifyingOtp,
-                                      phoneError: _phoneError,
-                                      otpError: _otpError,
                                       completing: _completing,
                                       onPickAvatar: _pickAvatar,
                                       onNextNickname: _onNextFromNickname,
                                       onNextAvatar: _onNextFromAvatar,
-                                      onSendOtp: _sendOtp,
-                                      onVerifyOtp: _verifyOtp,
-                                      onComplete: _complete,
                                       bottomPad: bottomPad,
                                     ),
                                   ),
@@ -407,21 +319,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                       uploadingAvatar: _uploadingAvatar,
                                       uploadedAvatarUrl: _uploadedAvatarUrl,
                                       initialAvatarUrl: widget.initialAvatarUrl,
-                                      phoneCtrl: _phoneCtrl,
-                                      otpCtrl: _otpCtrl,
-                                      otpSent: _otpSent,
-                                      phoneVerified: _phoneVerified,
-                                      sendingOtp: _sendingOtp,
-                                      verifyingOtp: _verifyingOtp,
-                                      phoneError: _phoneError,
-                                      otpError: _otpError,
                                       completing: _completing,
                                       onPickAvatar: _pickAvatar,
                                       onNextNickname: _onNextFromNickname,
                                       onNextAvatar: _onNextFromAvatar,
-                                      onSendOtp: _sendOtp,
-                                      onVerifyOtp: _verifyOtp,
-                                      onComplete: _complete,
                                       bottomPad: bottomPad,
                                     ),
                                   ),
@@ -438,21 +339,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                             uploadingAvatar: _uploadingAvatar,
                             uploadedAvatarUrl: _uploadedAvatarUrl,
                             initialAvatarUrl: widget.initialAvatarUrl,
-                            phoneCtrl: _phoneCtrl,
-                            otpCtrl: _otpCtrl,
-                            otpSent: _otpSent,
-                            phoneVerified: _phoneVerified,
-                            sendingOtp: _sendingOtp,
-                            verifyingOtp: _verifyingOtp,
-                            phoneError: _phoneError,
-                            otpError: _otpError,
                             completing: _completing,
                             onPickAvatar: _pickAvatar,
                             onNextNickname: _onNextFromNickname,
                             onNextAvatar: _onNextFromAvatar,
-                            onSendOtp: _sendOtp,
-                            onVerifyOtp: _verifyOtp,
-                            onComplete: _complete,
                             bottomPad: bottomPad,
                           );
                         },
@@ -483,7 +373,7 @@ class _TopBar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: List.generate(3, (i) {
+            children: List.generate(2, (i) {
               final active = i <= step;
               final current = i == step;
               return Expanded(
@@ -491,7 +381,7 @@ class _TopBar extends StatelessWidget {
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeOut,
                   height: 3,
-                  margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                  margin: EdgeInsets.only(right: i < 1 ? 6 : 0),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(2),
                     color: active
@@ -513,7 +403,7 @@ class _TopBar extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '${step + 1} / 3',
+            '${step + 1} / 2',
             style: TextStyle(
               fontSize: 11,
               color: Colors.white.withValues(alpha: 0.35),
@@ -538,21 +428,10 @@ class _StepContent extends StatelessWidget {
   final bool uploadingAvatar;
   final String? uploadedAvatarUrl;
   final String? initialAvatarUrl;
-  final TextEditingController phoneCtrl;
-  final TextEditingController otpCtrl;
-  final bool otpSent;
-  final bool phoneVerified;
-  final bool sendingOtp;
-  final bool verifyingOtp;
-  final String? phoneError;
-  final String? otpError;
   final bool completing;
   final VoidCallback onPickAvatar;
   final VoidCallback onNextNickname;
   final VoidCallback onNextAvatar;
-  final VoidCallback onSendOtp;
-  final VoidCallback onVerifyOtp;
-  final void Function({String? phone}) onComplete;
   final double bottomPad;
 
   const _StepContent({
@@ -564,21 +443,10 @@ class _StepContent extends StatelessWidget {
     required this.uploadingAvatar,
     required this.uploadedAvatarUrl,
     required this.initialAvatarUrl,
-    required this.phoneCtrl,
-    required this.otpCtrl,
-    required this.otpSent,
-    required this.phoneVerified,
-    required this.sendingOtp,
-    required this.verifyingOtp,
-    required this.phoneError,
-    required this.otpError,
     required this.completing,
     required this.onPickAvatar,
     required this.onNextNickname,
     required this.onNextAvatar,
-    required this.onSendOtp,
-    required this.onVerifyOtp,
-    required this.onComplete,
     required this.bottomPad,
   });
 
@@ -592,29 +460,15 @@ class _StepContent extends StatelessWidget {
           onNext: onNextNickname,
           bottomPad: bottomPad,
         ),
-      1 => _AvatarStep(
+      _ => _AvatarStep(
           avatarFile: avatarFile,
           uploadingAvatar: uploadingAvatar,
           uploadedAvatarUrl: uploadedAvatarUrl,
           initialAvatarUrl: initialAvatarUrl,
+          completing: completing,
           onPick: onPickAvatar,
           onNext: onNextAvatar,
           onSkip: onNextAvatar,
-          bottomPad: bottomPad,
-        ),
-      _ => _PhoneStep(
-          phoneCtrl: phoneCtrl,
-          otpCtrl: otpCtrl,
-          otpSent: otpSent,
-          phoneVerified: phoneVerified,
-          sendingOtp: sendingOtp,
-          verifyingOtp: verifyingOtp,
-          phoneError: phoneError,
-          otpError: otpError,
-          completing: completing,
-          onSendOtp: onSendOtp,
-          onVerifyOtp: onVerifyOtp,
-          onComplete: onComplete,
           bottomPad: bottomPad,
         ),
     };
@@ -679,6 +533,7 @@ class _AvatarStep extends StatelessWidget {
   final bool uploadingAvatar;
   final String? uploadedAvatarUrl;
   final String? initialAvatarUrl;
+  final bool completing;
   final VoidCallback onPick;
   final VoidCallback onNext;
   final VoidCallback onSkip;
@@ -689,6 +544,7 @@ class _AvatarStep extends StatelessWidget {
     required this.uploadingAvatar,
     required this.uploadedAvatarUrl,
     required this.initialAvatarUrl,
+    required this.completing,
     required this.onPick,
     required this.onNext,
     required this.onSkip,
@@ -782,8 +638,9 @@ class _AvatarStep extends StatelessWidget {
           ),
           const Spacer(),
           _PrimaryButton(
-            label: avatarFile != null ? '다음' : '다음',
+            label: '시작하기',
             onTap: onNext,
+            isLoading: completing,
           ),
           const SizedBox(height: 14),
           Center(
@@ -799,188 +656,6 @@ class _AvatarStep extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Step 3: 전화번호 ──────────────────────────────────────────────────────────
-
-class _PhoneStep extends StatelessWidget {
-  final TextEditingController phoneCtrl;
-  final TextEditingController otpCtrl;
-  final bool otpSent;
-  final bool phoneVerified;
-  final bool sendingOtp;
-  final bool verifyingOtp;
-  final String? phoneError;
-  final String? otpError;
-  final bool completing;
-  final VoidCallback onSendOtp;
-  final VoidCallback onVerifyOtp;
-  final void Function({String? phone}) onComplete;
-  final double bottomPad;
-
-  const _PhoneStep({
-    required this.phoneCtrl,
-    required this.otpCtrl,
-    required this.otpSent,
-    required this.phoneVerified,
-    required this.sendingOtp,
-    required this.verifyingOtp,
-    required this.phoneError,
-    required this.otpError,
-    required this.completing,
-    required this.onSendOtp,
-    required this.onVerifyOtp,
-    required this.onComplete,
-    required this.bottomPad,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(24, 32, 24, bottomPad + 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _StepHeader(
-            icon: Icons.phone_outlined,
-            title: '전화번호를\n인증해주세요',
-            subtitle: '안전한 계정 보호를 위해',
-          ),
-          const SizedBox(height: 36),
-
-          // 전화번호 입력
-          if (!phoneVerified) ...[
-            _OnboardingField(
-              controller: phoneCtrl,
-              hint: '010-0000-0000',
-              icon: Icons.phone_outlined,
-              keyboardType: TextInputType.phone,
-              enabled: !otpSent,
-              inputFormatters: [_KoreanPhoneFormatter()],
-            ),
-            if (phoneError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  phoneError!,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFFFF6B6B),
-                    fontFamily: 'Pretendard',
-                  ),
-                ),
-              ),
-            const SizedBox(height: 12),
-            if (!otpSent)
-              _PrimaryButton(
-                label: '인증번호 발송',
-                onTap: onSendOtp,
-                isLoading: sendingOtp,
-              ),
-
-            // OTP 입력 (발송 후 표시)
-            if (otpSent) ...[
-              const SizedBox(height: 20),
-              Text(
-                '인증번호',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.48),
-                  fontFamily: 'Pretendard',
-                ),
-              ),
-              const SizedBox(height: 7),
-              _OnboardingField(
-                controller: otpCtrl,
-                hint: '6자리 인증번호',
-                icon: Icons.lock_outline_rounded,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-              ),
-              if (otpError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    otpError!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFFFF6B6B),
-                      fontFamily: 'Pretendard',
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              _PrimaryButton(
-                label: '인증 확인',
-                onTap: onVerifyOtp,
-                isLoading: verifyingOtp,
-              ),
-            ],
-          ],
-
-          // 인증 완료 상태
-          if (phoneVerified) ...[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle_outline_rounded,
-                      color: Color(0xFF10B981), size: 20),
-                  const SizedBox(width: 10),
-                  Text(
-                    '전화번호 인증이 완료되었습니다',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontFamily: 'Pretendard',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 32),
-
-          // 완료 버튼
-          if (phoneVerified || !otpSent)
-            _PrimaryButton(
-              label: '시작하기',
-              onTap: completing
-                  ? () {}
-                  : () => onComplete(
-                        phone: phoneVerified ? phoneCtrl.text.trim() : null,
-                      ),
-              isLoading: completing,
-            ),
-
-          const SizedBox(height: 14),
-          if (!phoneVerified)
-            Center(
-              child: GestureDetector(
-                onTap: completing ? null : () => onComplete(phone: null),
-                child: Text(
-                  '건너뛰기',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontFamily: 'Pretendard',
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -1050,22 +725,14 @@ class _OnboardingField extends StatelessWidget {
   final FocusNode? focusNode;
   final String hint;
   final IconData icon;
-  final TextInputType? keyboardType;
-  final bool enabled;
-  final int? maxLength;
   final String? Function(String?)? validator;
-  final List<TextInputFormatter>? inputFormatters;
 
   const _OnboardingField({
     required this.controller,
     required this.hint,
     required this.icon,
     this.focusNode,
-    this.keyboardType,
-    this.enabled = true,
-    this.maxLength,
     this.validator,
-    this.inputFormatters,
   });
 
   @override
@@ -1073,13 +740,9 @@ class _OnboardingField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       focusNode: focusNode,
-      keyboardType: keyboardType,
-      enabled: enabled,
-      maxLength: maxLength,
       validator: validator,
-      inputFormatters: inputFormatters,
-      style: TextStyle(
-        color: enabled ? Colors.white : Colors.white.withValues(alpha: 0.45),
+      style: const TextStyle(
+        color: Colors.white,
         fontSize: 15,
         fontFamily: 'Pretendard',
       ),
@@ -1093,7 +756,7 @@ class _OnboardingField extends StatelessWidget {
         prefixIcon:
             Icon(icon, size: 18, color: Colors.white.withValues(alpha: 0.32)),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: enabled ? 0.07 : 0.03),
+        fillColor: Colors.white.withValues(alpha: 0.07),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(
@@ -1188,29 +851,6 @@ class _PrimaryButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ─── 전화번호 자동 포맷 (010-XXXX-XXXX) ──────────────────────────────────────
-
-class _KoreanPhoneFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    final buf = StringBuffer();
-    final len = digits.length.clamp(0, 11);
-    for (int i = 0; i < len; i++) {
-      if (i == 3 || i == 7) buf.write('-');
-      buf.write(digits[i]);
-    }
-    final formatted = buf.toString();
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

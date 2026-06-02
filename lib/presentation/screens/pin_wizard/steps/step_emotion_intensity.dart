@@ -38,18 +38,15 @@ class StepEmotionIntensity extends StatefulWidget {
 }
 
 class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
-  /// 감정별 이모지/팔레트 매핑.
   static const _emotionMeta = <String, _EmotionMeta>{
-    '좋아요': _EmotionMeta(
-      emoji: '💖',
-      svgPath: 'lib/img/emotion/hand-heart.svg',
-      gradient: [Color(0xFFFFB4C7), Color(0xFFE26AA0)],
-    ),
-    '별로에요': _EmotionMeta(
-      emoji: '💧',
-      gradient: [Color(0xFFB8D8F2), Color(0xFF7BA8CF)],
-    ),
+    '좋아요': _EmotionMeta(svgPath: 'lib/img/emotion/hand-heart.svg'),
+    '별로에요': _EmotionMeta(svgPath: 'lib/img/emotion/sad-circle-svgrepo-com.svg'),
   };
+
+  List<Color> _gradientFor(String e, BuildContext context) {
+    if (e == '좋아요') return [context.primaryLightColor, context.primaryColor];
+    return const [Color(0xFFB8D8F2), Color(0xFF7BA8CF)];
+  }
 
   void _selectEmotion(String e) {
     HapticFeedback.selectionClick();
@@ -69,7 +66,7 @@ class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
   Widget build(BuildContext context) {
     final emotion = widget.data.emotion;
     final intensity = widget.data.intensityLevel;
-    final activeMeta = _emotionMeta[emotion] ?? _emotionMeta.values.first;
+    final activeGradient = _gradientFor(emotion, context);
 
     return WizardScaffold(
       totalSteps: widget.totalSteps,
@@ -92,6 +89,7 @@ class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
           Row(
             children: AppConstants.emotions.map((e) {
               final meta = _emotionMeta[e] ?? _emotionMeta.values.first;
+              final grad = _gradientFor(e, context);
               final selected = e == emotion;
               return Expanded(
                 child: Padding(
@@ -100,9 +98,8 @@ class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
                   ),
                   child: _EmotionCard(
                     label: e,
-                    emoji: meta.emoji,
                     svgPath: meta.svgPath,
-                    gradient: meta.gradient,
+                    gradient: grad,
                     selected: selected,
                     onTap: () => _selectEmotion(e),
                   ),
@@ -130,7 +127,7 @@ class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: activeMeta.gradient.last,
+                  color: activeGradient.last,
                   fontFamily: AppTokens.fontBody,
                 ),
               ),
@@ -149,7 +146,7 @@ class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
                   child: _IntensityStar(
                     value: v,
                     filled: filled,
-                    gradient: activeMeta.gradient,
+                    gradient: activeGradient,
                     onTap: () => _selectIntensity(v),
                   ),
                 ),
@@ -193,24 +190,20 @@ class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
 }
 
 class _EmotionMeta {
-  final String emoji;
-  final String? svgPath;
-  final List<Color> gradient;
-  const _EmotionMeta({required this.emoji, this.svgPath, required this.gradient});
+  final String svgPath;
+  const _EmotionMeta({required this.svgPath});
 }
 
 class _EmotionCard extends StatelessWidget {
   final String label;
-  final String emoji;
-  final String? svgPath;
+  final String svgPath;
   final List<Color> gradient;
   final bool selected;
   final VoidCallback onTap;
 
   const _EmotionCard({
     required this.label,
-    required this.emoji,
-    this.svgPath,
+    required this.svgPath,
     required this.gradient,
     required this.selected,
     required this.onTap,
@@ -254,17 +247,15 @@ class _EmotionCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            svgPath != null
-                ? SvgPicture.asset(
-                    svgPath!,
-                    width: 40,
-                    height: 40,
-                    colorFilter: ColorFilter.mode(
-                      selected ? Colors.white : gradient.last,
-                      BlendMode.srcIn,
-                    ),
-                  )
-                : Text(emoji, style: const TextStyle(fontSize: 36)),
+            SvgPicture.asset(
+              svgPath,
+              width: 40,
+              height: 40,
+              colorFilter: ColorFilter.mode(
+                selected ? Colors.white : gradient.last,
+                BlendMode.srcIn,
+              ),
+            ),
             const SizedBox(height: 10),
             Text(
               label,

@@ -10,6 +10,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../data/repositories/pin_repository.dart';
+import '../../data/repositories/profile_repository.dart';
+
 // ─── Hive 키 ──────────────────────────────────────────────────────────────────
 const _kAuthModeKey = 'auth_mode';
 const _kAuthModeDemo = 'demo';
@@ -412,35 +415,6 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
     }
   }
 
-  /// 회원가입 전 전화번호 OTP 발송. null = 성공, 문자열 = 오류 메시지
-  Future<String?> sendSignupPhoneOtp(String phone) async {
-    try {
-      await Supabase.instance.client.auth.signInWithOtp(phone: phone);
-      return null;
-    } on AuthException catch (e) {
-      return e.message;
-    } catch (_) {
-      return '인증번호 발송에 실패했습니다.';
-    }
-  }
-
-  /// 회원가입 전 전화번호 OTP 검증 후 임시 세션 해제. null = 성공
-  Future<String?> verifySignupPhoneOtp(String phone, String token) async {
-    try {
-      await Supabase.instance.client.auth.verifyOTP(
-        phone: phone,
-        token: token,
-        type: OtpType.sms,
-      );
-      await Supabase.instance.client.auth.signOut();
-      return null;
-    } on AuthException catch (e) {
-      return e.message;
-    } catch (_) {
-      return '인증에 실패했습니다. 코드를 확인해주세요.';
-    }
-  }
-
   /// 비밀번호 재설정 이메일 발송. null = 성공
   Future<String?> sendPasswordResetEmail(String email) async {
     try {
@@ -456,21 +430,44 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
     }
   }
 
-  /// 이메일 회원가입. username·phone 은 user_metadata 에 저장
+  // 한국 주요 이메일 도메인 — GoTrue 내부 검증 우회 대상
+  static const _knownKoreanDomains = {
+    'naver.com', 'daum.net', 'kakao.com', 'hanmail.net',
+    'nate.com', 'korea.com', 'empal.com',
+  };
+
+  static bool _isValidEmailFormat(String email) {
+    final parts = email.split('@');
+    if (parts.length != 2) return false;
+    final local = parts[0];
+    final domain = parts[1];
+    if (local.isEmpty || domain.isEmpty) return false;
+    return domain.contains('.');
+  }
+
+  /// 이메일 회원가입. username 은 user_metadata 에 저장
   Future<void> signUpWithEmail(
     String email,
     String password, {
     String? username,
-    String? phone,
   }) async {
     state = state.copyWith(isLoading: true, error: null);
+
+    // 클라이언트 사전 검증 — 알려진 한국 도메인은 통과시킴
+    if (!_isValidEmailFormat(email)) {
+      state = state.copyWith(
+        isLoading: false,
+        error: '이메일 형식이 올바르지 않습니다.\n예: example@naver.com',
+      );
+      return;
+    }
+
     try {
       final meta = <String, dynamic>{};
       if (username != null) {
         meta['username'] = username;
         meta['display_name'] = username;
       }
-      if (phone != null) meta['phone'] = phone;
 
       final res = await Supabase.instance.client.auth.signUp(
         email: email,
@@ -489,7 +486,10 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
         state = state.copyWith(isLoading: false, error: '가입에 실패했습니다. 다시 시도해주세요.');
       }
     } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      state = state.copyWith(
+        isLoading: false,
+        error: _translateSignUpError(e.message, email: email),
+      );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: '가입 중 오류가 발생했습니다.');
     }
@@ -563,6 +563,37 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
     }
   }
 
+  String _translateSignUpError(String message, {String? email}) {
+    final m = message.toLowerCase();
+    if (m.contains('email address') && m.contains('invalid')) {
+      // naver/daum 등 한국 도메인이 Supabase 서버에서 거부된 경우
+      if (email != null) {
+        final domain = email.contains('@') ? email.split('@').last.toLowerCase() : '';
+        if (_knownKoreanDomains.contains(domain)) {
+          return '이 이메일 도메인은 현재 지원되지 않습니다.\nGmail 또는 다른 이메일로 가입해주세요.';
+        }
+      }
+      return '올바르지 않은 이메일 주소입니다.\n이메일 형식을 확인해주세요.';
+    }
+    if (m.contains('already registered') || m.contains('user already exists')) {
+      return '이미 가입된 이메일입니다.\n로그인을 시도해주세요.';
+    }
+    if (m.contains('password should be at least') ||
+        m.contains('password is too short')) {
+      return '비밀번호가 너무 짧습니다. 8자 이상 입력해주세요.';
+    }
+    if (m.contains('too many requests') || m.contains('rate limit')) {
+      return '잠시 후 다시 시도해주세요.\n(요청이 너무 많습니다)';
+    }
+    if (m.contains('network') || m.contains('connection')) {
+      return '네트워크 연결을 확인해주세요.';
+    }
+    if (m.contains('signup is disabled')) {
+      return '현재 회원가입이 비활성화되어 있습니다.';
+    }
+    return '가입 중 오류가 발생했습니다. 다시 시도해주세요.';
+  }
+
   String _translateAuthError(String message) {
     final m = message.toLowerCase();
     if (m.contains('invalid login credentials') ||
@@ -586,11 +617,10 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
 
   // ─── 온보딩 완료 ──────────────────────────────────────────────────────────────
 
-  /// 닉네임·프로필·전화번호를 users 테이블에 저장하고 온보딩 종료
+  /// 닉네임·프로필을 users 테이블에 저장하고 온보딩 종료
   Future<void> completeOnboarding({
     required String nickname,
     String? avatarUrl,
-    String? phone,
   }) async {
     final client = Supabase.instance.client;
     final uid = client.auth.currentUser?.id;
@@ -605,45 +635,17 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
       'updated_at': DateTime.now().toIso8601String(),
     };
     if (avatarUrl != null) data['avatar_url'] = avatarUrl;
-    if (phone != null) data['phone'] = phone;
 
     try {
       await client.from('users').upsert(data, onConflict: 'uid');
     } catch (_) {}
 
+    // 온보딩에서 생성한 친구코드를 로컬 Hive에도 동기화 (BUG-06)
+    try {
+      await ProfileRepository().setFriendCode(friendCode);
+    } catch (_) {}
+
     state = const PinlogAuthState(isAuthenticated: true);
-  }
-
-  // ─── 전화번호 OTP ─────────────────────────────────────────────────────────────
-
-  /// 전화번호로 OTP 발송. 오류 메시지 반환, null = 성공
-  Future<String?> sendPhoneOtp(String phone) async {
-    try {
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(phone: phone),
-      );
-      return null;
-    } on AuthException catch (e) {
-      return e.message;
-    } catch (_) {
-      return '인증번호 발송에 실패했습니다.';
-    }
-  }
-
-  /// OTP 검증. 오류 메시지 반환, null = 성공
-  Future<String?> verifyPhoneOtp(String phone, String otp) async {
-    try {
-      await Supabase.instance.client.auth.verifyOTP(
-        phone: phone,
-        token: otp,
-        type: OtpType.phoneChange,
-      );
-      return null;
-    } on AuthException catch (e) {
-      return e.message;
-    } catch (_) {
-      return '인증에 실패했습니다. 코드를 확인해주세요.';
-    }
   }
 
   // ─── 로그아웃 / 탈퇴 ─────────────────────────────────────────────────────────
@@ -665,17 +667,23 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
 
     try {
       await client.from('pins').delete().eq('uid', uid);
+      // 양방향 친구 관계 모두 삭제
       await client.from('friendships').delete().eq('user_uid', uid);
+      await client.from('friendships').delete().eq('friend_uid', uid);
       await client.from('scheduled_meetings').delete().eq('meet_uid', uid);
+      await client.from('scheduled_meetings').delete().eq('invitee_uid', uid);
       await client.from('users').delete().eq('uid', uid);
     } catch (_) {}
 
-    // Supabase auth.users 삭제 — RPC 함수 필요:
-    // CREATE OR REPLACE FUNCTION delete_user() RETURNS void AS $$
-    //   BEGIN DELETE FROM auth.users WHERE id = auth.uid(); END;
-    // $$ LANGUAGE plpgsql SECURITY DEFINER;
     try {
-      await client.rpc('delete_user');
+      await client.functions.invoke('delete-user');
+    } catch (_) {}
+
+    // C-02: 로컬 Hive 데이터 초기화
+    try {
+      await PinRepository().clearAll();
+      await Hive.box<String>('profile').clear();
+      await Hive.box<dynamic>('settings').clear();
     } catch (_) {}
 
     await signOut();

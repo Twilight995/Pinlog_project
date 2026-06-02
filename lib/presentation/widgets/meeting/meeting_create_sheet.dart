@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:geocoding/geocoding.dart';
 
 import '../../../application/providers/friends_provider.dart';
 import '../../../application/providers/meeting_provider.dart';
@@ -77,12 +78,27 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
     setState(() => _isLoading = true);
     HapticFeedback.mediumImpact();
 
-    // Use Seoul city center as default coords when only a name is given.
-    // In a real flow, integrate location search API here.
+    double? targetLat;
+    double? targetLng;
+    try {
+      final locations = await locationFromAddress(_locationCtrl.text.trim());
+      if (locations.isNotEmpty) {
+        targetLat = locations.first.latitude;
+        targetLng = locations.first.longitude;
+      }
+    } catch (_) {}
+
+    if (targetLat == null || targetLng == null) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError('장소를 찾을 수 없어요. 다시 입력해주세요.');
+      return;
+    }
+
     final success = await ref.read(meetingProvider.notifier).createMeeting(
           inviteeUid: _selectedFriendUid!,
-          targetLat: 37.5665,
-          targetLng: 126.9780,
+          targetLat: targetLat,
+          targetLng: targetLng,
           targetName: _locationCtrl.text.trim(),
           scheduledAt: _scheduledAt,
           transitMode: _transitMode,
@@ -157,11 +173,11 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
                 separatorBuilder: (ctx, idx) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   final f = friends[i];
-                  final selected = _selectedFriendUid == f.firestoreUid;
+                  final selected = _selectedFriendUid == f.supabaseUid;
                   return GestureDetector(
                     onTap: () {
                       HapticFeedback.selectionClick();
-                      setState(() => _selectedFriendUid = f.firestoreUid);
+                      setState(() => _selectedFriendUid = f.supabaseUid);
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),

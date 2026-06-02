@@ -7,7 +7,14 @@ import '../../../core/theme/app_theme.dart';
 class _LegalBase extends StatefulWidget {
   final String title;
   final List<_LegalSection> sections;
-  const _LegalBase({required this.title, required this.sections});
+  final String? extraTitle;
+  final List<_LegalSection>? extraSections;
+  const _LegalBase({
+    required this.title,
+    required this.sections,
+    this.extraTitle,
+    this.extraSections,
+  });
 
   @override
   State<_LegalBase> createState() => _LegalBaseState();
@@ -124,7 +131,11 @@ class _LegalBaseState extends State<_LegalBase> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 60),
-                    child: _LegalContent(sections: widget.sections),
+                    child: _LegalContent(
+                      sections: widget.sections,
+                      extraTitle: widget.extraTitle,
+                      extraSections: widget.extraSections,
+                    ),
                   ),
                 ),
               ],
@@ -143,6 +154,8 @@ class TermsScreen extends StatelessWidget {
   Widget build(BuildContext context) => const _LegalBase(
         title: '이용약관',
         sections: _kTermsSections,
+        extraTitle: '개인정보처리방침',
+        extraSections: _kPrivacySections,
       );
 }
 
@@ -166,10 +179,38 @@ class _LegalSection {
 
 class _LegalContent extends StatelessWidget {
   final List<_LegalSection> sections;
-  const _LegalContent({required this.sections});
+  final String? extraTitle;
+  final List<_LegalSection>? extraSections;
+  const _LegalContent({
+    required this.sections,
+    this.extraTitle,
+    this.extraSections,
+  });
+
+  Widget _buildSection(_LegalSection s, BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(s.title,
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: context.labelColor)),
+            const SizedBox(height: 8),
+            Text(s.body,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: context.subLabelColor,
+                  height: 1.8,
+                )),
+          ],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
+    final extra = extraSections;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -178,23 +219,26 @@ class _LegalContent extends StatelessWidget {
           style: TextStyle(fontSize: 12, color: context.subLabelColor),
         ),
         const SizedBox(height: 20),
-        ...sections.map((s) => Padding(
-          padding: const EdgeInsets.only(bottom: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(s.title,
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: context.labelColor)),
-              const SizedBox(height: 8),
-              Text(s.body,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: context.subLabelColor,
-                    height: 1.8,
-                  )),
-            ],
+        ...sections.map((s) => _buildSection(s, context)),
+        if (extra != null && extra.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Container(height: 1, color: context.glassBorder),
           ),
-        )),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 20, 0, 16),
+            child: Text(
+              extraTitle ?? '',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+                color: context.labelColor,
+              ),
+            ),
+          ),
+          ...extra.map((s) => _buildSection(s, context)),
+        ],
       ],
     );
   }

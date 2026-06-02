@@ -29,13 +29,15 @@ class PinModelAdapter extends TypeAdapter<PinModel> {
       sharedMapId: fields[13] as String?,
       countryCode: fields[14] as String? ?? '',
       taggedFriendCodes: (fields[15] as List?)?.cast<String>() ?? const [],
+      pinOuterColor: fields[16] as int?,
+      pinInnerColor: fields[17] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, PinModel obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -67,7 +69,11 @@ class PinModelAdapter extends TypeAdapter<PinModel> {
       ..writeByte(14)
       ..write(obj.countryCode)
       ..writeByte(15)
-      ..write(obj.taggedFriendCodes);
+      ..write(obj.taggedFriendCodes)
+      ..writeByte(16)
+      ..write(obj.pinOuterColor)
+      ..writeByte(17)
+      ..write(obj.pinInnerColor);
   }
 
   @override

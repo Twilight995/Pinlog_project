@@ -11,6 +11,8 @@ import 'package:path_provider/path_provider.dart';
 import '../../../application/providers/auth_provider.dart';
 import '../../../application/providers/friends_provider.dart';
 import '../../../application/providers/pin_provider.dart';
+import '../../../data/models/pin_model.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../application/providers/profile_provider.dart';
 import '../../../application/providers/theme_provider.dart';
 import '../auth/sign_in_screen.dart';
@@ -44,6 +46,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _notifEnabled = FCMService.instance.isEnabled;
   bool _syncEnabled = PinSyncService.instance.isEnabled;
   bool _isEditing = false;
+  bool _isExporting = false;
   late final ScrollController _sc;
 
   static const double _collapseRange = 56.0;
@@ -243,9 +246,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           await PinSyncService.instance.uploadAll(pins);
                         }
                       },
+                      isExporting: _isExporting,
                       onExportBackup: () async {
-                        final pins = ref.read(pinsProvider);
-                        await backupService.exportPins(pins);
+                        if (_isExporting) return;
+                        setState(() => _isExporting = true);
+                        try {
+                          final pins = ref.read(pinsProvider);
+                          if (pins.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('저장된 핀이 없습니다.')),
+                            );
+                            return;
+                          }
+                          await backupService.exportPins(pins);
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('내보내기 실패: $e')),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _isExporting = false);
+                        }
                       },
                       onImportBackup: () => _showImportDialog(context),
                       onCreateMeeting: () => _showMeetingCreate(context),
@@ -344,29 +366,137 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Future<void> _showImportDialog(BuildContext ctx) async {
     final ctrl = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showGeneralDialog<bool>(
       context: ctx,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: context.cardBg,
-        title: Text('백업 가져오기',
-            style: TextStyle(color: context.labelColor, fontWeight: FontWeight.w700)),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 6,
-          style: TextStyle(fontSize: 12, color: context.labelColor),
-          decoration: InputDecoration(
-            hintText: 'JSON 내용을 붙여넣으세요',
-            hintStyle: TextStyle(color: context.subLabelColor),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dCtx, _, _) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: context.cardBg,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 32,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: context.primaryColor.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.download_rounded, size: 19, color: context.primaryColor),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('백업 가져오기', style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w800,
+                            color: context.labelColor, letterSpacing: -0.3,
+                          )),
+                          Text('내보낸 JSON을 붙여넣으세요', style: TextStyle(
+                            fontSize: 11, color: context.subLabelColor,
+                          )),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  decoration: BoxDecoration(
+                    color: context.bgColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: context.glassBorder, width: 1.2),
+                  ),
+                  child: TextField(
+                    controller: ctrl,
+                    maxLines: 7,
+                    style: TextStyle(fontSize: 12, color: context.labelColor, fontFamily: 'monospace'),
+                    decoration: InputDecoration(
+                      hintText: 'JSON 내용을 붙여넣으세요...',
+                      hintStyle: TextStyle(color: context.subLabelColor),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.pop(dCtx, false),
+                        child: Container(
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: context.bgColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: context.glassBorder, width: 1.2),
+                          ),
+                          child: Center(child: Text('취소', style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600, color: context.subLabelColor,
+                          ))),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.pop(dCtx, true),
+                        child: Container(
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: context.primaryColor,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: context.primaryColor.withValues(alpha: 0.32),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const Center(child: Text('가져오기', style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white,
+                          ))),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('취소')),
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx, true),
-            child: Text('가져오기', style: TextStyle(color: context.primaryColor)),
+      ),
+      transitionBuilder: (_, anim, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+            CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
           ),
-        ],
+          child: child,
+        ),
       ),
     );
     if (confirmed != true || ctrl.text.trim().isEmpty) return;
@@ -800,6 +930,7 @@ class _ProfileCard extends StatelessWidget {
                     photoPath: photoPath,
                     primaryColor: primary,
                     isEditing: isEditing,
+                    frameId: frameId,
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -953,12 +1084,14 @@ class _AvatarSquare extends StatelessWidget {
   final String? photoPath;
   final Color primaryColor;
   final bool isEditing;
+  final String frameId;
 
   const _AvatarSquare({
     required this.nickname,
     required this.photoPath,
     required this.primaryColor,
     required this.isEditing,
+    this.frameId = 'basic',
   });
 
   Widget _photoPlaceholder(String nickname) => Center(
@@ -974,46 +1107,76 @@ class _AvatarSquare extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.bottomRight,
-      children: [
-        Container(
-          width: 68,
-          height: 68,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: photoPath == null
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [primaryColor, primaryColor.withValues(alpha: 0.70)],
-                  )
-                : null,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: photoPath != null
-              ? (photoPath!.startsWith('http')
-                  ? Image.network(photoPath!, fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => _photoPlaceholder(nickname))
-                  : Image.file(File(photoPath!), fit: BoxFit.cover))
-              : _photoPlaceholder(nickname),
-        ),
-        if (isEditing)
-          AnimatedOpacity(
-            opacity: isEditing ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 220),
-            child: Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                color: primaryColor,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: const Icon(Icons.camera_alt_rounded, size: 12, color: Colors.white),
+    final frame = _frameById(frameId);
+    final hasFrame = frameId != 'basic' && frame.svgPath != null;
+
+    // 프레임 있을 때 바깥 Stack은 90x90, 아바타는 68x68 중앙 배치
+    final outer = hasFrame ? 90.0 : 68.0;
+
+    return SizedBox(
+      width: outer,
+      height: outer,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // ── 아바타 + 카메라 아이콘 ────────────────────────────────────────
+          Align(
+            alignment: Alignment.center,
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: photoPath == null
+                        ? LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [primaryColor, primaryColor.withValues(alpha: 0.70)],
+                          )
+                        : null,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: photoPath != null
+                      ? (photoPath!.startsWith('http')
+                          ? Image.network(photoPath!, fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => _photoPlaceholder(nickname))
+                          : Image.file(File(photoPath!), fit: BoxFit.cover))
+                      : _photoPlaceholder(nickname),
+                ),
+                if (isEditing)
+                  AnimatedOpacity(
+                    opacity: isEditing ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 220),
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: primaryColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: const Icon(Icons.camera_alt_rounded, size: 12, color: Colors.white),
+                    ),
+                  ),
+              ],
             ),
           ),
-      ],
+
+          // ── 프레임 SVG 오버레이 ───────────────────────────────────────────
+          if (hasFrame)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: SvgPicture.asset(
+                  frame.svgPath!,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1246,7 +1409,7 @@ class _StatBox extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _RecentPinsSection extends StatefulWidget {
-  final List<dynamic> pins; // List<PinModel>
+  final List<PinModel> pins;
   final VoidCallback onViewAll;
   final void Function(String pinId)? onPinTap;
 
@@ -1328,7 +1491,7 @@ class _RecentPinsSectionState extends State<_RecentPinsSection> {
               child: _PinCard(
                 pin: pins[i],
                 onTap: widget.onPinTap != null
-                    ? () => widget.onPinTap!(pins[i].id as String)
+                    ? () => widget.onPinTap!(pins[i].id)
                     : null,
               ),
             ),
@@ -1980,6 +2143,7 @@ class _SettingsSection extends StatelessWidget {
   final ValueChanged<bool> onNotifChanged;
   final bool syncEnabled;
   final ValueChanged<bool> onSyncChanged;
+  final bool isExporting;
   final VoidCallback onExportBackup;
   final VoidCallback onImportBackup;
   final VoidCallback onCreateMeeting;
@@ -1991,6 +2155,7 @@ class _SettingsSection extends StatelessWidget {
     required this.onNotifChanged,
     required this.syncEnabled,
     required this.onSyncChanged,
+    required this.isExporting,
     required this.onExportBackup,
     required this.onImportBackup,
     required this.onCreateMeeting,
@@ -2056,10 +2221,20 @@ class _SettingsSection extends StatelessWidget {
               _RowSeparator(),
               _TapRow(
                 icon: Icons.upload_outlined,
-                iconColor: themeColor,
+                iconColor: isExporting ? mutedColor : themeColor,
                 label: '핀 내보내기',
-                subtitle: 'JSON 백업 파일로 저장/공유',
-                onTap: onExportBackup,
+                subtitle: isExporting ? '파일 생성 중...' : 'JSON 백업 파일로 저장/공유',
+                trailing: isExporting
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: themeColor,
+                        ),
+                      )
+                    : null,
+                onTap: isExporting ? null : onExportBackup,
               ),
               _RowSeparator(),
               _TapRow(
@@ -2071,10 +2246,10 @@ class _SettingsSection extends StatelessWidget {
               ),
               _RowSeparator(),
               _TapRow(
-                icon: Icons.share_outlined,
+                icon: Icons.share_location_rounded,
                 iconColor: themeColor,
-                label: '공유 지도',
-                subtitle: '친구와 함께한 장소 지도',
+                label: '동행',
+                subtitle: '친구와 실시간 위치 공유',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const SharedMapScreen()),
                 ),
@@ -2090,22 +2265,15 @@ class _SettingsSection extends StatelessWidget {
                 ),
               ),
               _RowSeparator(),
-              _TapRow(
-                icon: Icons.shield_outlined,
-                iconColor: themeColor,
-                label: '개인정보처리방침',
-                subtitle: '개인정보 수집 및 이용 안내',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const PrivacyScreen()),
+              FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) => _TapRow(
+                  icon: Icons.info_outline,
+                  iconColor: mutedColor,
+                  label: '앱 버전',
+                  subtitle: 'v${snapshot.data?.version ?? '1.0.0'}',
+                  onTap: null,
                 ),
-              ),
-              _RowSeparator(),
-              _TapRow(
-                icon: Icons.info_outline,
-                iconColor: mutedColor,
-                label: '앱 버전',
-                subtitle: 'v1.0.0',
-                onTap: null,
               ),
               _RowSeparator(),
               _TapRow(
@@ -2186,6 +2354,7 @@ class _TapRow extends StatelessWidget {
   final VoidCallback? onTap;
   final bool isLast;
   final bool isDestructive;
+  final Widget? trailing;
 
   const _TapRow({
     required this.icon,
@@ -2195,6 +2364,7 @@ class _TapRow extends StatelessWidget {
     required this.onTap,
     this.isLast = false,
     this.isDestructive = false,
+    this.trailing,
   });
 
   @override
@@ -2222,7 +2392,9 @@ class _TapRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (onTap != null)
+            if (trailing != null)
+              trailing!
+            else if (onTap != null)
               Icon(Icons.chevron_right, size: 18, color: context.subLabelColor)
             else
               const SizedBox.shrink(),

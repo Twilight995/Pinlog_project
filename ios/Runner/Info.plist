@@ -63,7 +63,14 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>현재 위치를 지도에 표시하기 위해 위치 접근이 필요합니다.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>현재 위치를 지도에 표시하기 위해 위치 접근이 필요합니다.</string>
+	<string>동행 중 실시간 위치 공유를 위해 위치 접근이 필요합니다.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>동행 중 백그라운드에서도 위치를 공유하기 위해 위치 접근이 필요합니다.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>핀에 사진을 추가하거나 프로필 사진을 설정하기 위해 사진 접근이 필요합니다.</string>
 	<key>NSCameraUsageDescription</key>

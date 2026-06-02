@@ -47,25 +47,13 @@ class SocialService {
     final uid = _uid;
     if (uid == null) return;
 
-    final meData = await _db.from('users').select().eq('uid', uid).limit(1);
-    final myNickname = meData.isNotEmpty
-        ? (meData.first['nickname'] as String? ?? 'Pinlog 탐험가')
-        : 'Pinlog 탐험가';
-
-    await _db.from('friendships').upsert([
-      {
-        'user_uid': uid,
-        'friend_uid': targetUid,
-        'friend_code': targetFriendCode.toUpperCase(),
-        'nickname': targetNickname,
-      },
-      {
-        'user_uid': targetUid,
-        'friend_uid': uid,
-        'friend_code': null,
-        'nickname': myNickname,
-      },
-    ], onConflict: 'user_uid,friend_uid');
+    // 내 쪽 row만 삽입 — 반대 row는 DB 트리거(trg_reverse_friendship)가 생성
+    await _db.from('friendships').upsert({
+      'user_uid': uid,
+      'friend_uid': targetUid,
+      'friend_code': targetFriendCode.toUpperCase(),
+      'nickname': targetNickname,
+    }, onConflict: 'user_uid,friend_uid');
   }
 
   Stream<List<Friend>> friendsStream() {
@@ -74,7 +62,7 @@ class SocialService {
 
     return _db
         .from('friendships')
-        .stream(primaryKey: ['id'])
+        .stream(primaryKey: ['user_uid', 'friend_uid'])
         .eq('user_uid', uid)
         .map((rows) => rows
             .map((row) => Friend(
@@ -83,7 +71,7 @@ class SocialService {
                   addedAt: row['added_at'] != null
                       ? DateTime.parse(row['added_at'] as String)
                       : DateTime.now(),
-                  firestoreUid: row['friend_uid'] as String?,
+                  supabaseUid: row['friend_uid'] as String?,
                 ))
             .toList());
   }

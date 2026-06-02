@@ -8,25 +8,6 @@ import '../../../application/providers/auth_provider.dart';
 import '../onboarding/onboarding_screen.dart';
 import 'email_verify_screen.dart';
 
-// 전화번호 자동 하이픈 포맷터 (010-XXXX-XXXX)
-class _PhoneFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    final buf = StringBuffer();
-    for (int i = 0; i < digits.length && i < 11; i++) {
-      if (i == 3 || i == 7) buf.write('-');
-      buf.write(digits[i]);
-    }
-    final text = buf.toString();
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
-}
-
 class SignUpScreen extends ConsumerStatefulWidget {
   const SignUpScreen({super.key});
 
@@ -49,13 +30,6 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   bool  _usernameChecking = false;
   bool? _usernameAvailable; // null=미확인 true=사용가능 false=중복
 
-  // 전화번호
-  final _phoneCtrl  = TextEditingController();
-  bool  _showPhone  = false;
-  bool  _sendingOtp = false;
-  bool  _phoneVerified = false;
-  String? _phoneError;
-
   @override
   void initState() {
     super.initState();
@@ -72,10 +46,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
       }
     }
     // 이메일 바뀌면 아이디 확인 초기화
-    setState(() {
-      _usernameAvailable = null;
-      _showPhone = false;
-    });
+    setState(() => _usernameAvailable = null);
   }
 
   bool get _isAutoUsername {
@@ -86,10 +57,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
 
   void _onUsernameEdited() {
     if (_usernameAvailable != null) {
-      setState(() {
-        _usernameAvailable = null;
-        _showPhone = false;
-      });
+      setState(() => _usernameAvailable = null);
     }
   }
 
@@ -99,7 +67,6 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     _usernameCtrl.dispose();
-    _phoneCtrl.dispose();
     super.dispose();
   }
 
@@ -116,36 +83,8 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     setState(() {
       _usernameChecking = false;
       _usernameAvailable = available;
-      if (available) _showPhone = true;
     });
     if (available) HapticFeedback.lightImpact();
-  }
-
-  // ── 전화번호 인증 (목업) ──────────────────────────────────────────────────────
-  // TODO(twilio): Supabase SMS 프로바이더(Twilio) 설정 후 실제 OTP 발송으로 교체
-  //   - sendSignupPhoneOtp(phone) → OTP 섹션 표시
-  //   - verifySignupPhoneOtp(phone, token) → _phoneVerified = true
-
-  Future<void> _sendOtp() async {
-    final phone = _phoneCtrl.text.trim();
-    if (phone.isEmpty) {
-      setState(() => _phoneError = '전화번호를 입력해주세요');
-      return;
-    }
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-    if (digits.length < 10) {
-      setState(() => _phoneError = '올바른 전화번호를 입력해주세요');
-      return;
-    }
-    HapticFeedback.selectionClick();
-    setState(() { _sendingOtp = true; _phoneError = null; });
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    setState(() {
-      _sendingOtp = false;
-      _phoneVerified = true;
-    });
-    HapticFeedback.mediumImpact();
   }
 
   // ── 회원가입 제출 ─────────────────────────────────────────────────────────────
@@ -158,17 +97,11 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
       return;
     }
 
-    if (_showPhone && !_phoneVerified) {
-      setState(() => _phoneError = '전화번호 인증을 완료해주세요');
-      return;
-    }
-
     HapticFeedback.lightImpact();
     await ref.read(pinlogAuthProvider.notifier).signUpWithEmail(
       _emailCtrl.text.trim(),
       _passwordCtrl.text,
       username: _usernameCtrl.text.trim(),
-      phone: _phoneVerified ? _phoneCtrl.text.trim() : null,
     );
   }
 
@@ -395,16 +328,6 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
 
                                 // ── 아이디 (중복확인) ────────────────────────
                                 _buildUsernameSection(),
-
-                                // ── 전화번호 섹션 (슬라이드 인) ─────────────
-                                AnimatedSize(
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeOutCubic,
-                                  alignment: Alignment.topCenter,
-                                  child: _showPhone
-                                      ? _buildPhoneSection()
-                                      : const SizedBox.shrink(),
-                                ),
 
                                 // ── 오류 메시지 ───────────────────────────
                                 if (authState.error != null)
@@ -665,161 +588,9 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     );
   }
 
-  // ── 전화번호 + OTP 섹션 ───────────────────────────────────────────────────────
-
-  Widget _buildPhoneSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 14),
-
-        // 구분선
-        Container(
-          height: 1,
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.transparent,
-                Colors.white.withValues(alpha: 0.12),
-                Colors.transparent,
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        Text(
-          '전화번호',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.white.withValues(alpha: 0.48),
-            fontFamily: 'Pretendard',
-            letterSpacing: 0.2,
-          ),
-        ),
-        const SizedBox(height: 7),
-
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _phoneCtrl,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [_PhoneFormatter()],
-                enabled: !_phoneVerified,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontFamily: 'Pretendard',
-                ),
-                decoration: InputDecoration(
-                  hintText: '010-0000-0000',
-                  hintStyle: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    fontSize: 13,
-                  ),
-                  prefixIcon: Icon(
-                    Icons.phone_outlined,
-                    size: 18,
-                    color: Colors.white.withValues(alpha: 0.32),
-                  ),
-                  filled: true,
-                  fillColor: _phoneVerified
-                      ? const Color(0xFF34D399).withValues(alpha: 0.08)
-                      : Colors.white.withValues(alpha: 0.07),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 16),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                        color: _phoneVerified
-                            ? const Color(0xFF34D399).withValues(alpha: 0.50)
-                            : Colors.white.withValues(alpha: 0.10)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius:
-                        const BorderRadius.all(Radius.circular(12)),
-                    borderSide: const BorderSide(
-                        color: Color(0xFF8B5CF6), width: 1.5),
-                  ),
-                  disabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                        color: const Color(0xFF34D399)
-                            .withValues(alpha: 0.40)),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            if (_phoneVerified)
-              _ActionButton(
-                label: '인증됨',
-                isLoading: false,
-                done: true,
-                onTap: null,
-              )
-            else
-              _ActionButton(
-                label: '인증',
-                isLoading: _sendingOtp,
-                done: false,
-                onTap: _sendingOtp ? null : _sendOtp,
-              ),
-          ],
-        ),
-
-        // 전화번호 오류
-        if (_phoneError != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(
-              children: [
-                const Icon(Icons.error_outline_rounded,
-                    size: 13, color: Color(0xFFFF6B6B)),
-                const SizedBox(width: 5),
-                Text(
-                  _phoneError!,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFFF6B6B),
-                    fontFamily: 'Pretendard',
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        // 인증완료 배지
-        if (_phoneVerified)
-          Padding(
-            padding: const EdgeInsets.only(top: 7),
-            child: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded,
-                    size: 13, color: Color(0xFF34D399)),
-                const SizedBox(width: 5),
-                const Text(
-                  '전화번호 인증이 완료되었습니다',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF34D399),
-                    fontFamily: 'Pretendard',
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-      ],
-    );
-  }
 }
 
-// ─── 액션 버튼 (중복확인/인증/확인) ───────────────────────────────────────────────
+// ─── 액션 버튼 (중복확인) ─────────────────────────────────────────────────────────
 
 class _ActionButton extends StatelessWidget {
   final String label;

@@ -10,7 +10,8 @@ import '../auth/sign_in_screen.dart';
 import '../main_shell.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  final VoidCallback? onDone;
+  const SplashScreen({super.key, this.onDone});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -23,6 +24,7 @@ class _SplashScreenState extends State<SplashScreen>
   Timer? _rotationTimer;
   bool _navigated = false;
   bool _mapReady = false;
+  bool _hideUI = false; // onDone 직전에 비네트·워드마크 제거
 
   late final AnimationController _contentCtrl;
   late final AnimationController _shimmerCtrl;
@@ -53,9 +55,9 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _onMapCreated(MapboxMap map) async {
     _mapboxMap = map;
 
-    // 지구본 초기 카메라 (아시아 태평양 중심, 살짝 기울임)
+    // 지구본 초기 카메라 — 한국 중심, 살짝 기울임
     await map.setCamera(CameraOptions(
-      center: Point(coordinates: Position(130.0, 30.0)),
+      center: Point(coordinates: Position(127.5, 36.5)),
       zoom: 1.5,
       pitch: 20,
       bearing: 0,
@@ -122,15 +124,25 @@ class _SplashScreenState extends State<SplashScreen>
         center: Point(coordinates: Position(cam.lng, cam.lat)),
         zoom: cam.zoom,
         pitch: 0,
-        bearing: _bearing,
+        bearing: 0,
       ),
-      MapAnimationOptions(duration: 1400),
+      MapAnimationOptions(duration: 1000),
     );
 
-    // flyTo 진행 중(700ms 시점)에 앱 화면이 서서히 크로스페이드
-    await Future.delayed(const Duration(milliseconds: 700));
+    // flyTo 완료(1000ms) 후 전환
+    await Future.delayed(const Duration(milliseconds: 1000));
     if (!mounted) return;
 
+    // 오버레이 모드: 비네트·워드마크 먼저 제거 → 지구본만 남긴 뒤 onDone
+    if (widget.onDone != null) {
+      setState(() => _hideUI = true);
+      await Future.delayed(const Duration(milliseconds: 200));
+      if (!mounted) return;
+      widget.onDone!();
+      return;
+    }
+
+    // 레거시 단독 라우트 모드 (fallback)
     final session = Supabase.instance.client.auth.currentSession;
     final storedMode = Hive.box<dynamic>('settings').get('auth_mode') as String?;
     final isAuthenticated = session != null || storedMode == 'demo';
@@ -139,11 +151,8 @@ class _SplashScreenState extends State<SplashScreen>
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (ctx, _, _) => dest,
-        transitionsBuilder: (ctx, anim, _, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-          child: child,
-        ),
-        transitionDuration: const Duration(milliseconds: 1100),
+        transitionsBuilder: (ctx, _, _, child) => child,
+        transitionDuration: Duration.zero,
       ),
     );
   }
@@ -173,34 +182,45 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
 
-          // ── 우주 분위기 — 가장자리 어둡게, 상단 더 진하게 ────────────────
-          IgnorePointer(
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(0, -0.1),
-                  radius: 1.1,
-                  colors: [
-                    Colors.transparent,
-                    Color(0xBB050B1A),
-                  ],
-                  stops: [0.42, 1.0],
+          // ── 우주 분위기 + 워드마크: onDone 직전에 fadeout ─────────────
+          AnimatedOpacity(
+            opacity: _hideUI ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 200),
+            child: Column(
+              children: [
+                // 상단 그라디언트
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Container(
+                    height: 160,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF050B1A), Colors.transparent],
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
 
-          // ── 상단 그라디언트 (지구본과 하늘의 경계) ──────────────────────
+          // 가장자리 비네트 (radial)
           IgnorePointer(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Container(
-                height: 160,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF050B1A), Colors.transparent],
+            child: AnimatedOpacity(
+              opacity: _hideUI ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 200),
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(0, -0.1),
+                    radius: 1.1,
+                    colors: [
+                      Colors.transparent,
+                      Color(0xBB050B1A),
+                    ],
+                    stops: [0.42, 1.0],
                   ),
                 ),
               ),
@@ -208,9 +228,12 @@ class _SplashScreenState extends State<SplashScreen>
           ),
 
           // ── PINLOG 워드마크 + 태그라인 (상단) ──────────────────────────────
-          FadeTransition(
-            opacity: _contentCtrl,
-            child: Column(
+          AnimatedOpacity(
+            opacity: _hideUI ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 200),
+            child: FadeTransition(
+              opacity: _contentCtrl,
+              child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 SizedBox(
@@ -260,6 +283,7 @@ class _SplashScreenState extends State<SplashScreen>
               ],
             ),
           ),
+          ), // AnimatedOpacity (hideUI)
 
         ],
       ),

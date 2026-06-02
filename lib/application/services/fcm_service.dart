@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/nav_provider.dart';
 import '../../main.dart';
+import '../../presentation/screens/social/friends_screen.dart';
 
 const _kFcmEnabledKey = 'fcm_enabled';
 
@@ -114,6 +115,11 @@ class FCMService {
       case 'friend_request':
       case 'friend':
         _switchTab(3); // 프로필 → 친구 진입
+        Future.microtask(() {
+          pinlogNavigatorKey.currentState?.push(
+            MaterialPageRoute<void>(builder: (_) => const FriendsScreen()),
+          );
+        });
       case 'pin':
         _switchTab(0);
       default:

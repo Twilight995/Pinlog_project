@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -10,8 +11,12 @@ import '../../../data/models/pin_model.dart';
 
 // AppColors.primary/accent → 앱 테마 색상으로 동적 매핑
 Color _resolveColor(Color defined, BuildContext context) {
-  if (defined.toARGB32() == AppColors.primary.toARGB32()) return context.primaryColor;
-  if (defined.toARGB32() == AppColors.accent.toARGB32()) return context.primaryLightColor;
+  if (defined.toARGB32() == AppColors.primary.toARGB32()) {
+    return context.primaryColor;
+  }
+  if (defined.toARGB32() == AppColors.accent.toARGB32()) {
+    return context.primaryLightColor;
+  }
   return defined;
 }
 
@@ -34,6 +39,286 @@ class _BadgeDef {
     required this.earned,
   });
 }
+
+// ─── 종목 마일스톤 모델 ──────────────────────────────────────────────────────────
+
+class _CatMilestone {
+  final String id;
+  final String category;
+  final String name;
+  final String description;
+  final int requiredCount;
+  final Color color;
+  final IconData icon;
+
+  const _CatMilestone({
+    required this.id,
+    required this.category,
+    required this.name,
+    required this.description,
+    required this.requiredCount,
+    required this.color,
+    required this.icon,
+  });
+
+  bool earned(List<PinModel> pins) =>
+      pins.where((p) => p.pinShape == category).length >= requiredCount;
+}
+
+const _catMilestones = <_CatMilestone>[
+  // ── 런닝 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(
+    id: 'run_tier1',
+    category: 'running',
+    name: '첫 런닝',
+    description: '런닝 1회 기록',
+    requiredCount: 1,
+    color: Color(0xFF4CAF50),
+    icon: Icons.directions_run_rounded,
+  ),
+  _CatMilestone(
+    id: 'run_tier2',
+    category: 'running',
+    name: '5km 돌파',
+    description: '런닝 5회 기록',
+    requiredCount: 5,
+    color: Color(0xFF2E7D32),
+    icon: Icons.directions_run_rounded,
+  ),
+  _CatMilestone(
+    id: 'run_tier3',
+    category: 'running',
+    name: '하프 마라토너',
+    description: '런닝 15회 기록',
+    requiredCount: 15,
+    color: Color(0xFF1B5E20),
+    icon: Icons.directions_run_rounded,
+  ),
+  _CatMilestone(
+    id: 'run_tier4',
+    category: 'running',
+    name: '울트라 러너',
+    description: '런닝 30회 기록',
+    requiredCount: 30,
+    color: Color(0xFF004D00),
+    icon: Icons.directions_run_rounded,
+  ),
+
+  // ── 산책 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(
+    id: 'walk_tier1',
+    category: 'walk',
+    name: '동네 첫 산책',
+    description: '산책 1회 기록',
+    requiredCount: 1,
+    color: Color(0xFF8BC34A),
+    icon: Icons.nature_people_rounded,
+  ),
+  _CatMilestone(
+    id: 'walk_tier2',
+    category: 'walk',
+    name: '동네 탐험가',
+    description: '산책 5회 기록',
+    requiredCount: 5,
+    color: Color(0xFF558B2F),
+    icon: Icons.nature_people_rounded,
+  ),
+  _CatMilestone(
+    id: 'walk_tier3',
+    category: 'walk',
+    name: '만보 생활자',
+    description: '산책 15회 기록',
+    requiredCount: 15,
+    color: Color(0xFF33691E),
+    icon: Icons.nature_people_rounded,
+  ),
+  _CatMilestone(
+    id: 'walk_tier4',
+    category: 'walk',
+    name: '걷는 사람',
+    description: '산책 30회 기록',
+    requiredCount: 30,
+    color: Color(0xFF1B5E20),
+    icon: Icons.nature_people_rounded,
+  ),
+
+  // ── 운동 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(
+    id: 'gym_tier1',
+    category: 'gym',
+    name: '헬스 입문',
+    description: '운동 1회 기록',
+    requiredCount: 1,
+    color: Color(0xFFEF5350),
+    icon: Icons.fitness_center_rounded,
+  ),
+  _CatMilestone(
+    id: 'gym_tier2',
+    category: 'gym',
+    name: '3일은 해봤어',
+    description: '운동 5회 기록',
+    requiredCount: 5,
+    color: Color(0xFFC62828),
+    icon: Icons.fitness_center_rounded,
+  ),
+  _CatMilestone(
+    id: 'gym_tier3',
+    category: 'gym',
+    name: '근육의 고통',
+    description: '운동 15회 기록',
+    requiredCount: 15,
+    color: Color(0xFFB71C1C),
+    icon: Icons.fitness_center_rounded,
+  ),
+  _CatMilestone(
+    id: 'gym_tier4',
+    category: 'gym',
+    name: '자기관리 완성',
+    description: '운동 30회 기록',
+    requiredCount: 30,
+    color: Color(0xFF7F0000),
+    icon: Icons.fitness_center_rounded,
+  ),
+
+  // ── 여행 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(
+    id: 'travel_tier1',
+    category: 'travel',
+    name: '첫 여행 기록',
+    description: '여행 1회 기록',
+    requiredCount: 1,
+    color: Color(0xFF42A5F5),
+    icon: Icons.flight_rounded,
+  ),
+  _CatMilestone(
+    id: 'travel_tier2',
+    category: 'travel',
+    name: '여행자',
+    description: '여행 5회 기록',
+    requiredCount: 5,
+    color: Color(0xFF1565C0),
+    icon: Icons.flight_rounded,
+  ),
+  _CatMilestone(
+    id: 'travel_tier3',
+    category: 'travel',
+    name: '여행 중독자',
+    description: '여행 15회 기록',
+    requiredCount: 15,
+    color: Color(0xFF0D47A1),
+    icon: Icons.flight_rounded,
+  ),
+  _CatMilestone(
+    id: 'travel_tier4',
+    category: 'travel',
+    name: '떠돌이',
+    description: '여행 30회 기록',
+    requiredCount: 30,
+    color: Color(0xFF002171),
+    icon: Icons.flight_rounded,
+  ),
+
+  // ── 축구 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'soccer_tier1', category: 'soccer', name: '첫 킥오프', description: '축구 1회 기록', requiredCount: 1, color: Color(0xFF43A047), icon: Icons.sports_soccer_rounded),
+  _CatMilestone(id: 'soccer_tier2', category: 'soccer', name: '주말 리거', description: '축구 5회 기록', requiredCount: 5, color: Color(0xFF2E7D32), icon: Icons.sports_soccer_rounded),
+  _CatMilestone(id: 'soccer_tier3', category: 'soccer', name: '필드의 지배자', description: '축구 15회 기록', requiredCount: 15, color: Color(0xFF1B5E20), icon: Icons.sports_soccer_rounded),
+  _CatMilestone(id: 'soccer_tier4', category: 'soccer', name: '축구 중독', description: '축구 30회 기록', requiredCount: 30, color: Color(0xFF004D00), icon: Icons.sports_soccer_rounded),
+
+  // ── 농구 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'bball_tier1', category: 'basketball', name: '첫 골인', description: '농구 1회 기록', requiredCount: 1, color: Color(0xFFE65100), icon: Icons.sports_basketball_rounded),
+  _CatMilestone(id: 'bball_tier2', category: 'basketball', name: '코트의 신입', description: '농구 5회 기록', requiredCount: 5, color: Color(0xFFBF360C), icon: Icons.sports_basketball_rounded),
+  _CatMilestone(id: 'bball_tier3', category: 'basketball', name: '농구 마니아', description: '농구 15회 기록', requiredCount: 15, color: Color(0xFF8D1A00), icon: Icons.sports_basketball_rounded),
+  _CatMilestone(id: 'bball_tier4', category: 'basketball', name: '코트의 지배자', description: '농구 30회 기록', requiredCount: 30, color: Color(0xFF5C1100), icon: Icons.sports_basketball_rounded),
+
+  // ── 야구 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'base_tier1', category: 'baseball', name: '시구 완료', description: '야구 1회 기록', requiredCount: 1, color: Color(0xFFD32F2F), icon: Icons.sports_baseball_rounded),
+  _CatMilestone(id: 'base_tier2', category: 'baseball', name: '다이아몬드 입문', description: '야구 5회 기록', requiredCount: 5, color: Color(0xFFC62828), icon: Icons.sports_baseball_rounded),
+  _CatMilestone(id: 'base_tier3', category: 'baseball', name: '홈런 예고', description: '야구 15회 기록', requiredCount: 15, color: Color(0xFFB71C1C), icon: Icons.sports_baseball_rounded),
+  _CatMilestone(id: 'base_tier4', category: 'baseball', name: '야구장 단골', description: '야구 30회 기록', requiredCount: 30, color: Color(0xFF7F0000), icon: Icons.sports_baseball_rounded),
+
+  // ── 카페 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'cafe_tier1', category: 'cafe', name: '첫 카페 체크인', description: '카페 1회 기록', requiredCount: 1, color: Color(0xFF8B5E3C), icon: Icons.local_cafe_rounded),
+  _CatMilestone(id: 'cafe_tier2', category: 'cafe', name: '카페 단골', description: '카페 10회 기록', requiredCount: 10, color: Color(0xFF6D4C41), icon: Icons.local_cafe_rounded),
+  _CatMilestone(id: 'cafe_tier3', category: 'cafe', name: '카페인 의존자', description: '카페 30회 기록', requiredCount: 30, color: Color(0xFF5D4037), icon: Icons.local_cafe_rounded),
+  _CatMilestone(id: 'cafe_tier4', category: 'cafe', name: '카페 마스터', description: '카페 50회 기록', requiredCount: 50, color: Color(0xFF4E342E), icon: Icons.local_cafe_rounded),
+
+  // ── 술자리 ──────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'drink_tier1', category: 'drinking', name: '건배!', description: '술자리 1회 기록', requiredCount: 1, color: Color(0xFFE8962E), icon: Icons.sports_bar_rounded),
+  _CatMilestone(id: 'drink_tier2', category: 'drinking', name: '소맥 달인', description: '술자리 5회 기록', requiredCount: 5, color: Color(0xFFE65100), icon: Icons.sports_bar_rounded),
+  _CatMilestone(id: 'drink_tier3', category: 'drinking', name: '술이 밥이라면', description: '술자리 10회 기록', requiredCount: 10, color: Color(0xFFBF360C), icon: Icons.sports_bar_rounded),
+  _CatMilestone(id: 'drink_tier4', category: 'drinking', name: '주량 전설', description: '술자리 20회 기록', requiredCount: 20, color: Color(0xFF8D1A00), icon: Icons.sports_bar_rounded),
+
+  // ── 쇼핑 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'shop_tier1', category: 'shopping', name: '첫 장바구니', description: '쇼핑 1회 기록', requiredCount: 1, color: Color(0xFFE91E8C), icon: Icons.shopping_bag_rounded),
+  _CatMilestone(id: 'shop_tier2', category: 'shopping', name: '쇼핑 취미인', description: '쇼핑 5회 기록', requiredCount: 5, color: Color(0xFFC2185B), icon: Icons.shopping_bag_rounded),
+  _CatMilestone(id: 'shop_tier3', category: 'shopping', name: '텅장 전문가', description: '쇼핑 15회 기록', requiredCount: 15, color: Color(0xFF880E4F), icon: Icons.shopping_bag_rounded),
+  _CatMilestone(id: 'shop_tier4', category: 'shopping', name: '쇼핑 중독자', description: '쇼핑 30회 기록', requiredCount: 30, color: Color(0xFF560027), icon: Icons.shopping_bag_rounded),
+
+  // ── 드라이브 ────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'drive_tier1', category: 'drive', name: '시동 ON', description: '드라이브 1회 기록', requiredCount: 1, color: Color(0xFF1976D2), icon: Icons.directions_car_rounded),
+  _CatMilestone(id: 'drive_tier2', category: 'drive', name: '주말 드라이버', description: '드라이브 5회 기록', requiredCount: 5, color: Color(0xFF1565C0), icon: Icons.directions_car_rounded),
+  _CatMilestone(id: 'drive_tier3', category: 'drive', name: '로드트립 마니아', description: '드라이브 15회 기록', requiredCount: 15, color: Color(0xFF0D47A1), icon: Icons.directions_car_rounded),
+  _CatMilestone(id: 'drive_tier4', category: 'drive', name: '도로 위의 자유인', description: '드라이브 30회 기록', requiredCount: 30, color: Color(0xFF002171), icon: Icons.directions_car_rounded),
+
+  // ── 독서 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'read_tier1', category: 'reading', name: '책장 입장', description: '독서 1회 기록', requiredCount: 1, color: Color(0xFF7B1FA2), icon: Icons.menu_book_rounded),
+  _CatMilestone(id: 'read_tier2', category: 'reading', name: '활자 중독', description: '독서 5회 기록', requiredCount: 5, color: Color(0xFF6A1B9A), icon: Icons.menu_book_rounded),
+  _CatMilestone(id: 'read_tier3', category: 'reading', name: '책 덕후', description: '독서 15회 기록', requiredCount: 15, color: Color(0xFF4A148C), icon: Icons.menu_book_rounded),
+  _CatMilestone(id: 'read_tier4', category: 'reading', name: '살아있는 도서관', description: '독서 30회 기록', requiredCount: 30, color: Color(0xFF2D0065), icon: Icons.menu_book_rounded),
+
+  // ── 자기개발 ────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'self_tier1', category: 'selfdev', name: '성장의 시작', description: '자기개발 1회 기록', requiredCount: 1, color: Color(0xFF6A1B9A), icon: Icons.psychology_rounded),
+  _CatMilestone(id: 'self_tier2', category: 'selfdev', name: '진취적 인간', description: '자기개발 5회 기록', requiredCount: 5, color: Color(0xFF4A148C), icon: Icons.psychology_rounded),
+  _CatMilestone(id: 'self_tier3', category: 'selfdev', name: '자기계발 덕후', description: '자기개발 15회 기록', requiredCount: 15, color: Color(0xFF38006B), icon: Icons.psychology_rounded),
+  _CatMilestone(id: 'self_tier4', category: 'selfdev', name: '내 일 한번 저질러보겠소', description: '자기개발 30회 기록', requiredCount: 30, color: Color(0xFF220038), icon: Icons.psychology_rounded),
+
+  // ── 오락 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'game_tier1', category: 'game', name: '1P 입장', description: '오락 1회 기록', requiredCount: 1, color: Color(0xFF1565C0), icon: Icons.sports_esports_rounded),
+  _CatMilestone(id: 'game_tier2', category: 'game', name: '인싸 게이머', description: '오락 5회 기록', requiredCount: 5, color: Color(0xFF0D47A1), icon: Icons.sports_esports_rounded),
+  _CatMilestone(id: 'game_tier3', category: 'game', name: '게임 광', description: '오락 15회 기록', requiredCount: 15, color: Color(0xFF002171), icon: Icons.sports_esports_rounded),
+  _CatMilestone(id: 'game_tier4', category: 'game', name: '전설의 레이더', description: '오락 30회 기록', requiredCount: 30, color: Color(0xFF00007F), icon: Icons.sports_esports_rounded),
+
+  // ── 자연 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'nature_tier1', category: 'nature', name: '자연인 입문', description: '자연 1회 기록', requiredCount: 1, color: Color(0xFF388E3C), icon: Icons.park_rounded),
+  _CatMilestone(id: 'nature_tier2', category: 'nature', name: '숲속의 사람', description: '자연 5회 기록', requiredCount: 5, color: Color(0xFF2E7D32), icon: Icons.park_rounded),
+  _CatMilestone(id: 'nature_tier3', category: 'nature', name: '자연 탐험가', description: '자연 15회 기록', requiredCount: 15, color: Color(0xFF1B5E20), icon: Icons.park_rounded),
+  _CatMilestone(id: 'nature_tier4', category: 'nature', name: '자연의 화신', description: '자연 30회 기록', requiredCount: 30, color: Color(0xFF004D00), icon: Icons.park_rounded),
+
+  // ── 사진 ────────────────────────────────────────────────────────────────────
+  _CatMilestone(id: 'photo_tier1', category: 'photo', name: '셔터 누름', description: '사진 1회 기록', requiredCount: 1, color: Color(0xFF00838F), icon: Icons.camera_alt_rounded),
+  _CatMilestone(id: 'photo_tier2', category: 'photo', name: '감성 사진가', description: '사진 5회 기록', requiredCount: 5, color: Color(0xFF00695C), icon: Icons.camera_alt_rounded),
+  _CatMilestone(id: 'photo_tier3', category: 'photo', name: '필름 덕후', description: '사진 15회 기록', requiredCount: 15, color: Color(0xFF004D40), icon: Icons.camera_alt_rounded),
+  _CatMilestone(id: 'photo_tier4', category: 'photo', name: '사진 아티스트', description: '사진 30회 기록', requiredCount: 30, color: Color(0xFF002520), icon: Icons.camera_alt_rounded),
+];
+
+// ─── 종목 카드 정의 ──────────────────────────────────────────────────────────────
+
+class _CatTrackDef {
+  final String category;
+  final String label;
+  final IconData icon;
+  final Color color;
+  const _CatTrackDef({required this.category, required this.label, required this.icon, required this.color});
+}
+
+const _catTrackDefs = <_CatTrackDef>[
+  _CatTrackDef(category: 'running',    label: '런닝',    icon: Icons.directions_run_rounded,  color: Color(0xFF4CAF50)),
+  _CatTrackDef(category: 'walk',       label: '산책',    icon: Icons.nature_people_rounded,   color: Color(0xFF8BC34A)),
+  _CatTrackDef(category: 'gym',        label: '운동',    icon: Icons.fitness_center_rounded,  color: Color(0xFFEF5350)),
+  _CatTrackDef(category: 'travel',     label: '여행',    icon: Icons.flight_rounded,          color: Color(0xFF42A5F5)),
+  _CatTrackDef(category: 'soccer',     label: '축구',    icon: Icons.sports_soccer_rounded,   color: Color(0xFF43A047)),
+  _CatTrackDef(category: 'basketball', label: '농구',    icon: Icons.sports_basketball_rounded, color: Color(0xFFE65100)),
+  _CatTrackDef(category: 'baseball',   label: '야구',    icon: Icons.sports_baseball_rounded, color: Color(0xFFD32F2F)),
+  _CatTrackDef(category: 'cafe',       label: '카페',    icon: Icons.local_cafe_rounded,      color: Color(0xFF8B5E3C)),
+  _CatTrackDef(category: 'drinking',   label: '술자리',  icon: Icons.sports_bar_rounded,      color: Color(0xFFE8962E)),
+  _CatTrackDef(category: 'shopping',   label: '쇼핑',    icon: Icons.shopping_bag_rounded,    color: Color(0xFFE91E8C)),
+  _CatTrackDef(category: 'drive',      label: '드라이브', icon: Icons.directions_car_rounded,  color: Color(0xFF1976D2)),
+  _CatTrackDef(category: 'reading',    label: '독서',    icon: Icons.menu_book_rounded,       color: Color(0xFF7B1FA2)),
+  _CatTrackDef(category: 'selfdev',    label: '자기개발', icon: Icons.psychology_rounded,      color: Color(0xFF6A1B9A)),
+  _CatTrackDef(category: 'game',       label: '오락',    icon: Icons.sports_esports_rounded,  color: Color(0xFF1565C0)),
+  _CatTrackDef(category: 'nature',     label: '자연',    icon: Icons.park_rounded,            color: Color(0xFF388E3C)),
+  _CatTrackDef(category: 'photo',      label: '사진',    icon: Icons.camera_alt_rounded,      color: Color(0xFF00838F)),
+];
 
 // ─── 칭호 모델 ────────────────────────────────────────────────────────────────
 
@@ -89,7 +374,7 @@ final _badges = <_BadgeDef>[
   ),
   _BadgeDef(
     id: 'runner',
-    name: '오늘도 달렸다 (힘들었지만)',
+    name: '전생에 이봉주',
     description: '런닝 기록 5회 이상',
     icon: Icons.directions_run_rounded,
     color: const Color(0xFF4CAF50),
@@ -97,7 +382,7 @@ final _badges = <_BadgeDef>[
   ),
   _BadgeDef(
     id: 'gym_rat',
-    name: '헬스장 적금 다 썼다',
+    name: '자기 관리 시작',
     description: '운동 기록 5회 이상',
     icon: Icons.fitness_center_rounded,
     color: AppColors.danger,
@@ -105,7 +390,7 @@ final _badges = <_BadgeDef>[
   ),
   _BadgeDef(
     id: 'soccer_king',
-    name: '축구왕 등극',
+    name: '축린이',
     description: '축구 기록 5회 이상',
     icon: Icons.sports_soccer_rounded,
     color: const Color(0xFF43A047),
@@ -129,7 +414,7 @@ final _badges = <_BadgeDef>[
   ),
   _BadgeDef(
     id: 'self_dev_addict',
-    name: '자기개발 중독자',
+    name: '내 일 한번 저질러보겠소',
     description: '자기개발 기록 5회 이상',
     icon: Icons.psychology_rounded,
     color: const Color(0xFF7B1FA2),
@@ -137,7 +422,7 @@ final _badges = <_BadgeDef>[
   ),
   _BadgeDef(
     id: 'gamer',
-    name: '현실보다 게임이 더 재밌어',
+    name: '게임 광',
     description: '오락 기록 5회 이상',
     icon: Icons.sports_esports_rounded,
     color: const Color(0xFF1565C0),
@@ -370,9 +655,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     final topPad = MediaQuery.of(context).padding.top;
 
     // 큰 타이틀: 0→70% 구간에서 페이드아웃
-    final largeOp = 1.0 - Curves.easeInCubic.transform((t / 0.70).clamp(0.0, 1.0));
+    final largeOp =
+        1.0 - Curves.easeInCubic.transform((t / 0.70).clamp(0.0, 1.0));
     // 작은 타이틀: 55→100% 구간에서 페이드인
-    final smallOp = Curves.easeOutCubic.transform(((t - 0.55) / 0.45).clamp(0.0, 1.0));
+    final smallOp = Curves.easeOutCubic.transform(
+      ((t - 0.55) / 0.45).clamp(0.0, 1.0),
+    );
 
     return Scaffold(
       backgroundColor: context.bgColor,
@@ -658,7 +946,10 @@ class _PinDogamTab extends StatelessWidget {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: context.primaryColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
@@ -758,7 +1049,9 @@ class _PinCategoryItem extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: unlocked
-                      ? (context.isDark ? const Color(0xFF2D2D2D) : Colors.white)
+                      ? (context.isDark
+                            ? const Color(0xFF2D2D2D)
+                            : Colors.white)
                       : Colors.white.withValues(alpha: 0.60),
                   border: Border.all(
                     color: unlocked
@@ -767,16 +1060,30 @@ class _PinCategoryItem extends StatelessWidget {
                     width: unlocked ? 2.5 : 1.2,
                   ),
                   boxShadow: unlocked
-                      ? [BoxShadow(color: context.primaryColor.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))]
+                      ? [
+                          BoxShadow(
+                            color: context.primaryColor.withValues(alpha: 0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
                       : [],
                 ),
                 child: Center(
                   child: svgPath.isNotEmpty
                       ? Opacity(
                           opacity: unlocked ? 1.0 : 0.25,
-                          child: SvgPicture.asset(svgPath, width: 30, height: 30),
+                          child: SvgPicture.asset(
+                            svgPath,
+                            width: 30,
+                            height: 30,
+                          ),
                         )
-                      : const Icon(Icons.place_rounded, size: 28, color: Color(0xFFFFCC00)),
+                      : const Icon(
+                          Icons.place_rounded,
+                          size: 28,
+                          color: Color(0xFFFFCC00),
+                        ),
                 ),
               ),
               // 잠금 배지 (우하단)
@@ -803,7 +1110,11 @@ class _PinCategoryItem extends StatelessWidget {
                       ],
                     ),
                     child: const Center(
-                      child: Icon(Icons.lock_rounded, size: 11, color: Color(0xFFAAAAAA)),
+                      child: Icon(
+                        Icons.lock_rounded,
+                        size: 11,
+                        color: Color(0xFFAAAAAA),
+                      ),
                     ),
                   ),
                 ),
@@ -838,7 +1149,7 @@ class _PinCategoryItem extends StatelessWidget {
 
 // ─── 뱃지 도감 탭 ─────────────────────────────────────────────────────────────
 
-class _BadgeDogamTab extends StatelessWidget {
+class _BadgeDogamTab extends StatefulWidget {
   final List<PinModel> pins;
   final List<_BadgeDef> earnedBadges;
   final _TitleDef currentTitle;
@@ -855,6 +1166,13 @@ class _BadgeDogamTab extends StatelessWidget {
     required this.controller,
   });
 
+  @override
+  State<_BadgeDogamTab> createState() => _BadgeDogamTabState();
+}
+
+class _BadgeDogamTabState extends State<_BadgeDogamTab> {
+  bool _catExpanded = false;
+
   void _showDetail(BuildContext context, _BadgeDef badge, bool earned) {
     showAppSheet<void>(
       context,
@@ -864,23 +1182,84 @@ class _BadgeDogamTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final pins = widget.pins;
+    final earnedBadges = widget.earnedBadges;
     final lockedBadges = _badges.where((b) => !b.earned(pins)).toList();
 
+    int catCount(String cat) => pins.where((p) => p.pinShape == cat).length;
+
+    const primaryCount = 4;
+    final primaryDefs = _catTrackDefs.take(primaryCount).toList();
+    final extraDefs   = _catTrackDefs.skip(primaryCount).toList();
+
     return CustomScrollView(
-      controller: controller,
+      controller: widget.controller,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: _TitleCard(
-              titleDef: currentTitle,
-              nextTitle: toNext > 0 ? nextTitle : null,
-              toNext: toNext,
+              titleDef: widget.currentTitle,
+              nextTitle: widget.toNext > 0 ? widget.nextTitle : null,
+              toNext: widget.toNext,
               pinCount: pins.length,
             ),
           ),
         ),
+
+        // ── 종목 기록 ────────────────────────────────────────────────────────
+        _SectionHeader(label: '종목 기록', count: null),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Column(
+              children: [
+                // 기본 4개
+                ...primaryDefs.map((def) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _CatTrackCard(
+                    label: def.label,
+                    icon: def.icon,
+                    color: def.color,
+                    count: catCount(def.category),
+                    milestones: _catMilestones.where((m) => m.category == def.category).toList(),
+                  ),
+                )),
+                // 더보기 — AnimatedSize로 부드럽게 확장
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: _catExpanded
+                      ? Column(
+                          children: extraDefs.map((def) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _CatTrackCard(
+                              label: def.label,
+                              icon: def.icon,
+                              color: def.color,
+                              count: catCount(def.category),
+                              milestones: _catMilestones.where((m) => m.category == def.category).toList(),
+                            ),
+                          )).toList(),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                // 더보기 / 접기 버튼
+                _MoreToggleButton(
+                  expanded: _catExpanded,
+                  extraCount: extraDefs.length,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _catExpanded = !_catExpanded);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+
         if (earnedBadges.isNotEmpty) ...[
           _SectionHeader(label: '획득한 뱃지', count: earnedBadges.length),
           SliverPadding(
@@ -893,10 +1272,10 @@ class _BadgeDogamTab extends StatelessWidget {
                 childAspectRatio: 0.88,
               ),
               delegate: SliverChildBuilderDelegate(
-                (context, i) => _BadgeCard(
+                (ctx, i) => _BadgeCard(
                   badge: earnedBadges[i],
                   earned: true,
-                  onTap: () => _showDetail(context, earnedBadges[i], true),
+                  onTap: () => _showDetail(ctx, earnedBadges[i], true),
                 ),
                 childCount: earnedBadges.length,
               ),
@@ -915,10 +1294,10 @@ class _BadgeDogamTab extends StatelessWidget {
                 childAspectRatio: 0.88,
               ),
               delegate: SliverChildBuilderDelegate(
-                (context, i) => _BadgeCard(
+                (ctx, i) => _BadgeCard(
                   badge: lockedBadges[i],
                   earned: false,
-                  onTap: () => _showDetail(context, lockedBadges[i], false),
+                  onTap: () => _showDetail(ctx, lockedBadges[i], false),
                 ),
                 childCount: lockedBadges.length,
               ),
@@ -948,7 +1327,9 @@ class _TitleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _resolveColor(titleDef.color, context);
-    final nextColor = nextTitle != null ? _resolveColor(nextTitle!.color, context) : color;
+    final nextColor = nextTitle != null
+        ? _resolveColor(nextTitle!.color, context)
+        : color;
     final progress = nextTitle != null && nextTitle!.minPins > 0
         ? (pinCount - titleDef.minPins) /
               (nextTitle!.minPins - titleDef.minPins)
@@ -1044,7 +1425,7 @@ class _TitleCard extends StatelessWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String label;
-  final int count;
+  final int? count;
   const _SectionHeader({required this.label, required this.count});
 
   @override
@@ -1062,24 +1443,224 @@ class _SectionHeader extends StatelessWidget {
                 color: context.labelColor,
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: context.countBadgeBg,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '$count',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.greyLight,
+            if (count != null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: context.countBadgeBg,
+                  borderRadius: BorderRadius.circular(8),
                 ),
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.greyLight,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 더보기 토글 버튼 ─────────────────────────────────────────────────────────
+
+class _MoreToggleButton extends StatelessWidget {
+  final bool expanded;
+  final int extraCount;
+  final VoidCallback onTap;
+
+  const _MoreToggleButton({
+    required this.expanded,
+    required this.extraCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        margin: const EdgeInsets.only(top: 4, bottom: 4),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: context.isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.black.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: context.isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.06),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              expanded ? '접기' : '더보기 (+$extraCount)',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: context.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 4),
+            AnimatedRotation(
+              duration: const Duration(milliseconds: 260),
+              turns: expanded ? 0.5 : 0.0,
+              child: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: context.primaryColor,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── 종목 트랙 카드 ───────────────────────────────────────────────────────────
+
+class _CatTrackCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final int count;
+  final List<_CatMilestone> milestones;
+
+  const _CatTrackCard({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.count,
+    required this.milestones,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 현재 달성 단계 (0~4)
+    final earnedCount = milestones
+        .where((m) => count >= m.requiredCount)
+        .length;
+    final currentMilestone = earnedCount > 0
+        ? milestones[earnedCount - 1]
+        : null;
+    final nextMilestone = earnedCount < milestones.length
+        ? milestones[earnedCount]
+        : null;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: context.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: context.glassCardShadow,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: context.labelColor,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    if (currentMilestone != null)
+                      Text(
+                        currentMilestone.name,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: List.generate(milestones.length, (i) {
+                    final unlocked = i < earnedCount;
+                    return Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          right: i < milestones.length - 1 ? 4 : 0,
+                        ),
+                        child: Column(
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: unlocked ? color : context.chipBorder,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${milestones[i].requiredCount}회',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w500,
+                                color: unlocked ? color : context.subLabelColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                if (nextMilestone != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '다음: ${nextMilestone.name} (${nextMilestone.requiredCount - count}회 남음)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.subLabelColor,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$count회',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: earnedCount > 0 ? color : context.subLabelColor,
+            ),
+          ),
+        ],
       ),
     );
   }

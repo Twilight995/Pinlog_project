@@ -167,9 +167,16 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
         state = state.copyWith(
           activeMeeting: meeting.copyWith(status: MeetingStatus.meeting),
         );
-        _stopLiveTracking();
+        unawaited(_stopLiveTracking());
       }
     });
+
+    // M-01: GPS 권한 확인
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return;
+    }
 
     // Stream my GPS
     _gpsSub?.cancel();

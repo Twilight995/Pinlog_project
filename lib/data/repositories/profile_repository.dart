@@ -46,4 +46,9 @@ class ProfileRepository {
   Future<void> setPhotoPath(String? value) =>
       value != null ? _box.put(_photoPathKey, value) : _box.delete(_photoPathKey);
   Future<void> setBorderStyle(String value) => _box.put(_borderStyleKey, value);
+  Future<void> setFriendCode(String code) => _box.put(_friendCodeKey, code);
+
+  Future<void> clearAll() async {
+    await _box.clear();
+  }
 }

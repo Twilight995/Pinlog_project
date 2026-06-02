@@ -11,6 +11,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart'
     hide LocationSettings, Size;
 
+import '../../../application/providers/donghaeng_provider.dart';
 import '../../../application/providers/meeting_provider.dart';
 import '../../../application/providers/pin_provider.dart';
 import '../../../application/providers/theme_provider.dart';
@@ -22,6 +23,7 @@ import '../../../core/utils/sheet_utils.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/common/glass_button.dart';
 import '../../widgets/map/cluster_anim_overlay.dart';
+import '../../widgets/map/donghaeng_panel.dart';
 import '../../widgets/meeting/meeting_bottom_sheet.dart';
 import '../../widgets/meeting/meeting_overlay.dart';
 import '../../widgets/map/filter_sheet.dart';
@@ -49,19 +51,51 @@ class _Cluster {
   });
 }
 
-// ISO 3166-1 alpha-2 → 국기 이모지
-String _countryFlag(String code) {
-  if (code.length != 2) return '';
-  final a = String.fromCharCode(code.codeUnitAt(0) - 0x41 + 0x1F1E6);
-  final b = String.fromCharCode(code.codeUnitAt(1) - 0x41 + 0x1F1E6);
-  return a + b;
-}
+const _kFallbackFlagSvg = 'lib/img/flag/flag-triangle-right.svg';
 
 const _countrySvgs = <String, String>{
   'KR': 'lib/img/flag/flag-for-south-korea-svgrepo-com.svg',
   'US': 'lib/img/flag/flag-usa-solid-svgrepo-com.svg',
   'CN': 'lib/img/flag/flag-china-solid-svgrepo-com.svg',
   'JP': 'lib/img/flag/flag-for-japan-svgrepo-com.svg',
+  'TW': 'lib/img/flag/flag-for-taiwan-svgrepo-com.svg',
+  'GB': 'lib/img/flag/flag-for-united-kingdom-svgrepo-com.svg',
+  'FR': 'lib/img/flag/flag-for-france-svgrepo-com.svg',
+  'DE': 'lib/img/flag/flag-for-germany-svgrepo-com.svg',
+  'IT': 'lib/img/flag/flag-for-italy-svgrepo-com.svg',
+  'ES': 'lib/img/flag/flag-for-spain-svgrepo-com.svg',
+  'TH': 'lib/img/flag/flag-for-thailand-svgrepo-com.svg',
+  'VN': 'lib/img/flag/flag-for-vietnam-svgrepo-com.svg',
+  'SG': 'lib/img/flag/flag-for-singapore-svgrepo-com.svg',
+  'MY': 'lib/img/flag/flag-for-malaysia-svgrepo-com.svg',
+  'ID': 'lib/img/flag/flag-for-indonesia-svgrepo-com.svg',
+  'PH': 'lib/img/flag/flag-for-philippines-svgrepo-com.svg',
+  'AU': 'lib/img/flag/flag-for-australia-svgrepo-com.svg',
+  'CA': 'lib/img/canada-maple-leaf-svgrepo-com.svg',
+  'AT': 'lib/img/flag-for-flag-austria-svgrepo-com.svg',
+  'BR': 'lib/img/flag-for-flag-brazil-svgrepo-com.svg',
+  'KH': 'lib/img/flag-for-flag-cambodia-svgrepo-com.svg',
+  'DK': 'lib/img/flag-for-flag-denmark-svgrepo-com.svg',
+  'EG': 'lib/img/flag-for-flag-egypt-svgrepo-com.svg',
+  'GR': 'lib/img/flag-for-flag-greece-svgrepo-com.svg',
+  'HK': 'lib/img/flag-for-flag-hong-kong-sar-china-svgrepo-com.svg',
+  'HU': 'lib/img/flag-for-flag-hungary-svgrepo-com.svg',
+  'IN': 'lib/img/flag-for-flag-india-svgrepo-com.svg',
+  'LA': 'lib/img/flag-for-flag-laos-svgrepo-com.svg',
+  'MV': 'lib/img/flag-for-flag-maldives-svgrepo-com.svg',
+  'MX': 'lib/img/flag-for-flag-mexico-svgrepo-com.svg',
+  'MM': 'lib/img/flag-for-flag-myanmar-burma-svgrepo-com.svg',
+  'NP': 'lib/img/flag-for-flag-nepal-svgrepo-com.svg',
+  'NL': 'lib/img/flag-for-flag-netherlands-svgrepo-com.svg',
+  'NZ': 'lib/img/flag-for-flag-new-zealand-svgrepo-com.svg',
+  'NO': 'lib/img/flag-for-flag-norway-svgrepo-com.svg',
+  'PT': 'lib/img/flag-for-flag-portugal-svgrepo-com.svg',
+  'QA': 'lib/img/flag-for-flag-qatar-svgrepo-com.svg',
+  'LK': 'lib/img/flag-for-flag-sri-lanka-svgrepo-com.svg',
+  'SE': 'lib/img/flag-for-flag-sweden-svgrepo-com.svg',
+  'CH': 'lib/img/flag-for-flag-switzerland-svgrepo-com.svg',
+  'TR': 'lib/img/flag-for-flag-turkey-svgrepo-com.svg',
+  'AE': 'lib/img/united-arab-emirates-svgrepo-com.svg',
 };
 
 // 핀 카테고리 → SVG 경로 (정적 마커용)
@@ -89,6 +123,7 @@ List<Color> _pinBorderGradient(Color theme) {
 Future<Uint8List> _buildMarkerBitmap({
   required bool isCluster,
   required Color themeColor,
+  Color? bodyColorOverride,
   int count = 0,
   String svgPath = '',
   // 클러스터 아이콘 크로스페이드: 이전 SVG + 진행도 (0.0 = 이전 아이콘, 1.0 = 새 아이콘)
@@ -97,7 +132,8 @@ Future<Uint8List> _buildMarkerBitmap({
   required double pixelRatio,
 }) async {
   final tc = themeColor.toARGB32();
-  final key = '${isCluster}_${count}_${svgPath}_${fadeSvgPath}_${fadeProgress.toStringAsFixed(2)}_${tc}_${pixelRatio.toStringAsFixed(1)}';
+  final bc = bodyColorOverride?.toARGB32() ?? 0;
+  final key = '${isCluster}_${count}_${svgPath}_${fadeSvgPath}_${fadeProgress.toStringAsFixed(2)}_${tc}_${bc}_${pixelRatio.toStringAsFixed(1)}';
   if (_markerCache.containsKey(key)) return _markerCache[key]!;
 
   // 글로우 sigma(7px)×3 = 21px 여백 확보: 사각형 아티팩트 방지
@@ -109,7 +145,7 @@ Future<Uint8List> _buildMarkerBitmap({
   final r = pixelRatio * (isCluster ? 24.0 : 21.0);
   final gradientRect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
 
-  final bodyColor = _pinBodyColor(themeColor);
+  final bodyColor = bodyColorOverride ?? _pinBodyColor(themeColor);
   final borderColors = _pinBorderGradient(themeColor);
 
   final recorder = ui.PictureRecorder();
@@ -214,14 +250,77 @@ Future<Uint8List> _buildMarkerBitmap({
   return bytes;
 }
 
-// 지구본 모드 국가 마커 (국기 이모지 + 카운트 뱃지) — 테마 색 적용
+// 동행 참여자 마커 (닉네임 이니셜 + 컬러 원)
+Future<Uint8List> _buildDonghaengMarkerBitmap({
+  required String nickname,
+  required String uid,
+  required double pixelRatio,
+  required Color themeColor,
+  bool isMe = false,
+}) async {
+  const colors = [
+    Color(0xFF3B82F6), Color(0xFF10B981), Color(0xFFF59E0B),
+    Color(0xFFEF4444), Color(0xFF8B5CF6), Color(0xFFEC4899),
+  ];
+  final color = isMe
+      ? themeColor
+      : (uid.isEmpty ? colors[0] : colors[uid.codeUnitAt(0) % colors.length]);
+  final initial = isMe ? '나' : (nickname.isNotEmpty ? nickname[0] : '?');
+
+  const logicalSize = 54.0;
+  final pxSize = (logicalSize * pixelRatio).roundToDouble();
+  final cx = pxSize / 2;
+  final cy = pxSize / 2;
+  final r = pxSize / 2 - pixelRatio * 4;
+
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder, Rect.fromLTWH(0, 0, pxSize, pxSize));
+  canvas.clipPath(Path()..addOval(Rect.fromLTWH(0, 0, pxSize, pxSize)));
+
+  // glow
+  canvas.drawCircle(
+    Offset(cx, cy), r + pixelRatio * 3,
+    Paint()
+      ..color = color.withValues(alpha: 0.35)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 6),
+  );
+  // filled circle
+  canvas.drawCircle(Offset(cx, cy), r, Paint()..color = color.withValues(alpha: 0.18));
+  // border
+  canvas.drawCircle(
+    Offset(cx, cy), r,
+    Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = pixelRatio * 2.2
+      ..color = color,
+  );
+  // text
+  final tp = TextPainter(
+    text: TextSpan(
+      text: initial,
+      style: TextStyle(
+        color: color,
+        fontSize: pixelRatio * 14,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
+
+  final picture = recorder.endRecording();
+  final image = await picture.toImage(pxSize.toInt(), pxSize.toInt());
+  final bd = await image.toByteData(format: ui.ImageByteFormat.png);
+  return bd!.buffer.asUint8List();
+}
+
+// 지구본 모드 국가 마커 (국기 SVG + 카운트 뱃지) — 테마 색 적용
 Future<Uint8List> _buildCountryMarkerBitmap({
   required String countryCode,
   required int count,
   required double pixelRatio,
   required Color themeColor,
 }) async {
-  final flag = _countryFlag(countryCode);
   final tc = themeColor.toARGB32();
   final key =
       'country_${countryCode}_${count}_${pixelRatio.toStringAsFixed(1)}_$tc';
@@ -274,51 +373,35 @@ Future<Uint8List> _buildCountryMarkerBitmap({
       ).createShader(gradientRect),
   );
 
-  // 국기 — SVG 우선, 없으면 이모지 폴백
-  final flagSvgPath = _countrySvgs[countryCode];
-  if (flagSvgPath != null) {
-    try {
-      final loader = SvgAssetLoader(flagSvgPath);
-      final info = await vg.loadPicture(loader, null);
-      final iconPx = r * 0.72;
-      final scale = iconPx / math.max(info.size.width, info.size.height);
-      final scaledW = info.size.width * scale;
-      final scaledH = info.size.height * scale;
-      final ox = cx - scaledW / 2;
-      final oy = cy - scaledH / 2;
-      canvas.saveLayer(
-        Rect.fromLTWH(ox, oy, scaledW, scaledH),
-        Paint()..color = Colors.white,
-      );
-      canvas.save();
-      canvas.translate(ox, oy);
-      canvas.scale(scale);
-      canvas.saveLayer(
-        Rect.fromLTWH(0, 0, info.size.width, info.size.height),
-        Paint()..colorFilter = const ui.ColorFilter.mode(Colors.white, BlendMode.srcIn),
-      );
-      canvas.drawPicture(info.picture);
-      canvas.restore();
-      canvas.restore();
-      canvas.restore();
-      info.picture.dispose();
-    } catch (_) {
-      // SVG 실패 시 이모지 폴백
-      final emojiPx = pxSize * 0.48;
-      final pb = ui.ParagraphBuilder(
-        ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: emojiPx),
-      )..addText(flag);
-      final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
-      canvas.drawParagraph(para, Offset(0, cy - para.height / 2));
-    }
-  } else {
-    // SVG 없는 국가 — 이모지
-    final emojiPx = pxSize * 0.48;
-    final pb = ui.ParagraphBuilder(
-      ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: emojiPx),
-    )..addText(flag);
-    final para = pb.build()..layout(ui.ParagraphConstraints(width: pxSize));
-    canvas.drawParagraph(para, Offset(0, cy - para.height / 2));
+  // 국기 — 국가별 SVG 우선, 없으면 일반 깃발 SVG 사용
+  final flagSvgPath = _countrySvgs[countryCode] ?? _kFallbackFlagSvg;
+  try {
+    final loader = SvgAssetLoader(flagSvgPath);
+    final info = await vg.loadPicture(loader, null);
+    final iconPx = r * 0.72;
+    final scale = iconPx / math.max(info.size.width, info.size.height);
+    final scaledW = info.size.width * scale;
+    final scaledH = info.size.height * scale;
+    final ox = cx - scaledW / 2;
+    final oy = cy - scaledH / 2;
+    canvas.saveLayer(
+      Rect.fromLTWH(ox, oy, scaledW, scaledH),
+      Paint()..color = Colors.white,
+    );
+    canvas.save();
+    canvas.translate(ox, oy);
+    canvas.scale(scale);
+    canvas.saveLayer(
+      Rect.fromLTWH(0, 0, info.size.width, info.size.height),
+      Paint()..colorFilter = const ui.ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    );
+    canvas.drawPicture(info.picture);
+    canvas.restore();
+    canvas.restore();
+    canvas.restore();
+    info.picture.dispose();
+  } catch (_) {
+    // SVG 로드 실패 시 아이콘 없이 원형 마커만 표시
   }
 
   final picture = recorder.endRecording();
@@ -519,17 +602,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   MapboxMap? _mapboxMap;
   PointAnnotationManager? _pinManager;
   PointAnnotationManager? _locationManager;
+  PointAnnotationManager? _donghaengManager;
   PolylineAnnotationManager? _polylineManager;
 
   final Map<String, String> _pinAnnotationIds = {};
   final Map<String, (double, double)> _clusterIds = {};
+  final Map<String, String> _donghaengAnnotationIds = {}; // annotationId → uid
 
-  double _zoom = 13.0;
-  double _cameraCenterLat = 37.5665;
-  double _cameraCenterLng = 126.9780;
+  double _zoom = 6.5;
+  double _cameraCenterLat = 36.5;
+  double _cameraCenterLng = 127.5;
   bool _mapReady = false;
+  bool _mapInitialized = false;
   // 줌 이벤트 throttle: 마지막으로 업데이트를 트리거한 줌 값
-  double _lastUpdateZoom = 13.0;
+  double _lastUpdateZoom = 6.5;
 
   // 카메라 위치 저장 디바운스 (1초)
   Timer? _cameraSaveTimer;
@@ -588,6 +674,21 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   PinModel? _recapBannerPin;
 
   @override
+  void initState() {
+    super.initState();
+    // CameraPrefs를 미리 로드해 MapWidget cameraOptions에 전달 — (0,0) 기본값 노출 방지
+    CameraPrefs.load().then((cam) {
+      if (!mounted) return;
+      setState(() {
+        _zoom = cam.zoom;
+        _cameraCenterLat = cam.lat;
+        _cameraCenterLng = cam.lng;
+        _lastUpdateZoom = cam.zoom;
+      });
+    });
+  }
+
+  @override
   void dispose() {
     _updateTimer?.cancel();
     _cycleTimer?.cancel();
@@ -630,6 +731,50 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
   }
 
+  // ─── 동행 마커 업데이트 ───────────────────────────────────────────────────
+
+  Future<void> _updateDonghaengMarkers(DonghaengState dongState) async {
+    if (_donghaengManager == null) return;
+    await _donghaengManager!.deleteAll();
+    _donghaengAnnotationIds.clear();
+
+    if (!dongState.isActive) return;
+    final session = dongState.session!;
+    final pixelRatio =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+
+    final participants = session.participants.where((p) =>
+      p.lat != null && p.lng != null && !p.arrivedHome).toList();
+
+    if (participants.isEmpty) return;
+
+    final images = await Future.wait(participants.map((p) =>
+      _buildDonghaengMarkerBitmap(
+        nickname: p.nickname,
+        uid: p.uid,
+        pixelRatio: pixelRatio,
+        themeColor: ref.read(themePresetProvider).primary,
+        isMe: p.uid == (session.participants.isNotEmpty ? session.participants.first.uid : ''),
+      ),
+    ));
+
+    final options = participants.asMap().entries.map((e) =>
+      PointAnnotationOptions(
+        geometry: Point(coordinates: Position(e.value.lng!, e.value.lat!)),
+        image: images[e.key],
+        iconSize: 1.0,
+        iconAnchor: IconAnchor.CENTER,
+      ),
+    ).toList();
+
+    final created = await _donghaengManager!.createMulti(options);
+    for (var i = 0; i < created.length; i++) {
+      if (created[i] != null) {
+        _donghaengAnnotationIds[created[i]!.id] = participants[i].uid;
+      }
+    }
+  }
+
   void _startCycleTimer() {
     _cycleTimer?.cancel();
     _cycleTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
@@ -644,7 +789,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Future<void> _cycleClusterIcons() async {
     if (_currentPins.isEmpty || _pinManager == null) return;
     if (_isCycling || _annotationByKey.isEmpty) return;
-    if (_isUpdatingMarkers) return; // 마커 업데이트 중 사이클 스킵 — annotation 충돌 방지
+    if (_isUpdatingMarkers || _isGlobeTransitioning || _isGlobeMode) return;
 
     final clusters = _computeClusters(_currentPins, _isGlobeMode ? 0.0 : _zoom);
     final pixelRatio =
@@ -695,6 +840,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         // 세대가 바뀌었거나(_updateMarkers 완료) 업데이트 중이면 스킵
         if (_pinManager == null ||
             _isUpdatingMarkers ||
+            _isGlobeTransitioning ||
             _markerGeneration != genSnapshot) { return; }
         annotation.image = bitmap;
         await _pinManager!.update(annotation);
@@ -771,7 +917,109 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return clusters;
   }
 
-  // ─── 마커 페이드 헬퍼 ──────────────────────────────────────────────────────
+  // ─── 전환 오버레이용 ClusterItem 사전 렌더 ────────────────────────────────
+
+  // Uint8List PNG → ui.Image 디코딩
+  Future<ui.Image> _pngToUiImage(Uint8List bytes) async {
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    return frame.image;
+  }
+
+  // 현재 표시 중인 클러스터(_liveClusters) → 각각의 비트맵 이미지를 가진 ClusterItem 목록
+  Future<List<ClusterItem>> _buildCaptureItemsForClusters(List<_Cluster> clusters) async {
+    if (clusters.isEmpty) return [];
+    final pixelRatio =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    final themePreset = ref.read(themePresetProvider);
+    final themeColor = themePreset.primary;
+
+    return Future.wait(clusters.map((c) async {
+      Uint8List bytes;
+      if (c.countryCode != null) {
+        bytes = await _buildCountryMarkerBitmap(
+          countryCode: c.countryCode == '_unknown' ? '' : c.countryCode!,
+          count: c.pins.length,
+          pixelRatio: pixelRatio,
+          themeColor: themeColor,
+        );
+      } else {
+        final shapes = c.pins.map((p) => p.pinShape).toSet().toList()..sort();
+        String svgPath;
+        Color markerColor;
+        if (c.pins.length == 1) {
+          svgPath = _shapeSvgPath(c.pins.first.pinShape);
+          markerColor = AppConstants.categoryColor(c.pins.first.pinShape, themePreset);
+        } else {
+          final key = _clusterKey(c);
+          final idx = (_clusterIconIndex[key] ?? 0) % shapes.length;
+          svgPath = _shapeSvgPath(shapes[idx]);
+          markerColor = shapes.length == 1
+              ? AppConstants.categoryColor(shapes.first, themePreset)
+              : themeColor;
+        }
+        bytes = await _buildMarkerBitmap(
+          isCluster: c.pins.length > 1,
+          themeColor: markerColor,
+          count: c.pins.length,
+          svgPath: svgPath,
+          pixelRatio: pixelRatio,
+        );
+      }
+      final img = await _pngToUiImage(bytes);
+      return ClusterItem(
+        lat: c.lat,
+        lng: c.lng,
+        count: c.pins.length,
+        countryCode: c.countryCode,
+        renderedImage: img,
+      );
+    }));
+  }
+
+  // 개별 핀 목록 → 단일 핀 이미지를 가진 ClusterItem 목록 (카테고리별 이미지 중복 제거)
+  Future<List<ClusterItem>> _buildCaptureItemsForPins(List<PinModel> pins) async {
+    if (pins.isEmpty) return [];
+    final pixelRatio =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    final themePreset = ref.read(themePresetProvider);
+
+    // Phase 1: 카테고리별 고유 bytes 수집 (캐시 덕분에 빠름)
+    final Map<String, Uint8List> bytesByKey = {};
+    for (final pin in pins) {
+      final svgPath = _shapeSvgPath(pin.pinShape);
+      final markerColor = AppConstants.categoryColor(pin.pinShape, themePreset);
+      final key = '${markerColor.toARGB32()}_$svgPath';
+      if (!bytesByKey.containsKey(key)) {
+        bytesByKey[key] = await _buildMarkerBitmap(
+          isCluster: false,
+          themeColor: markerColor,
+          count: 1,
+          svgPath: svgPath,
+          pixelRatio: pixelRatio,
+        );
+      }
+    }
+
+    // Phase 2: 고유 이미지만 디코딩
+    final Map<String, ui.Image> imagesByKey = {};
+    for (final entry in bytesByKey.entries) {
+      imagesByKey[entry.key] = await _pngToUiImage(entry.value);
+    }
+
+    // Phase 3: 핀마다 해당 이미지 연결
+    return pins.map((pin) {
+      final svgPath = _shapeSvgPath(pin.pinShape);
+      final markerColor = AppConstants.categoryColor(pin.pinShape, themePreset);
+      final key = '${markerColor.toARGB32()}_$svgPath';
+      return ClusterItem(
+        lat: pin.latitude,
+        lng: pin.longitude,
+        count: 1,
+        renderedImage: imagesByKey[key],
+      );
+    }).toList();
+  }
 
   // ─── 마커 업데이트 ─────────────────────────────────────────────────────────
 
@@ -828,13 +1076,25 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             svgPath = _shapeSvgPath(shapes.first);
           }
         }
-        // 단일 카테고리면 카테고리 색, 혼합 클러스터면 테마 색
-        final markerColor = shapes.length == 1
-            ? AppConstants.categoryColor(shapes.first, themePreset)
-            : themeColor;
+        // 단일 핀: per-pin 색 우선, 없으면 카테고리 색
+        // 클러스터: 단일 카테고리면 카테고리 색, 혼합이면 테마 색
+        final isSingle = c.pins.length == 1;
+        Color markerColor;
+        Color? markerBodyOverride;
+        if (isSingle && c.pins.first.pinOuterColor != null) {
+          markerColor = Color(c.pins.first.pinOuterColor!);
+        } else if (shapes.length == 1) {
+          markerColor = AppConstants.categoryColor(shapes.first, themePreset);
+        } else {
+          markerColor = themeColor;
+        }
+        if (isSingle && c.pins.first.pinInnerColor != null) {
+          markerBodyOverride = Color(c.pins.first.pinInnerColor!);
+        }
         return _buildMarkerBitmap(
           isCluster: c.pins.length > 1,
           themeColor: markerColor,
+          bodyColorOverride: markerBodyOverride,
           count: c.pins.length,
           svgPath: svgPath,
           pixelRatio: pixelRatio,
@@ -1040,27 +1300,21 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     HapticFeedback.mediumImpact();
 
-    // 현재 핀들을 캡처해서 수렴 애니메이션 실행
-    final capturePins = _currentPins
-        .map((p) => ClusterItem(lat: p.latitude, lng: p.longitude, count: 1))
-        .toList();
-    if (mounted) {
-      setState(() {
-        _globeTransPins = capturePins;
-        _globeTransEntering = true;
-        _globeTransZoom = _zoom;
-        _globeTransCenterLat = _cameraCenterLat;
-        _globeTransCenterLng = _cameraCenterLng;
-        _showGlobeTransAnim = true;
-      });
-    }
+    // Mapbox 어노테이션 즉시 숨김
+    await _pinManager?.setIconOpacity(0.0);
 
-    // flyTo 시작 전 마커 즉시 삭제 — 애니메이션 중 잔상 방지
-    await _pinManager?.deleteAll();
-    _pinAnnotationIds.clear();
-    _clusterIds.clear();
-    _annotationByKey.clear();
-    _liveClusters = [];
+    // 현재 클러스터 비트맵을 ui.Image로 사전 렌더 (캐시됨, 이미지 디코딩 시간 동안 Mapbox opacity 적용 완료됨)
+    final capturePins = await _buildCaptureItemsForClusters(_liveClusters);
+    if (!mounted) return;
+
+    setState(() {
+      _globeTransPins = capturePins;
+      _globeTransEntering = true;
+      _globeTransZoom = _zoom;
+      _globeTransCenterLat = _cameraCenterLat;
+      _globeTransCenterLng = _cameraCenterLng;
+      _showGlobeTransAnim = true;
+    });
 
     final state = await _mapboxMap!.getCameraState();
     _mapboxMap!.flyTo(
@@ -1073,8 +1327,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       MapAnimationOptions(duration: 2200),
     );
 
+    // 이미 opacity=0 이므로 시각적 영향 없이 삭제
+    await _pinManager?.deleteAll();
+    _pinAnnotationIds.clear();
+    _clusterIds.clear();
+    _annotationByKey.clear();
+    _liveClusters = [];
+
     // 애니메이션 실제 완료까지 대기 (duration + 200ms 여유)
-    await Future.delayed(const Duration(milliseconds: 2400));
+    await Future.delayed(const Duration(milliseconds: 2250));
 
     if (mounted) {
       ref.read(globeModeProvider.notifier).state = true;
@@ -1084,6 +1345,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _isGlobeTransitioning = false;
         _globePanelExpanded = false;
       });
+      // 새 마커 추가 전 opacity 복원
+      await _pinManager?.setIconOpacity(1.0);
       _updateMarkers(ref.read(filteredPinsProvider));
     }
   }
@@ -1094,18 +1357,19 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final targetLat = lat ?? 37.5665;
     final targetLng = lng ?? 126.9780;
 
+    // 지구본 모드 마커 즉시 숨김
+    await _pinManager?.setIconOpacity(0.0);
+
+    // 복귀 후 보여줄 개별 핀 이미지 사전 렌더 (카테고리별 중복 제거)
+    final sourcePins = ref.read(filteredPinsProvider);
+    final capturePins = await _buildCaptureItemsForPins(sourcePins);
+    if (!mounted) return;
+
     ref.read(globeModeProvider.notifier).state = false;
     setState(() {
       _isGlobeMode = false;
       _isGlobeTransitioning = true;
-      // 목표 줌/위치 기준으로 핀 확산 애니메이션 준비
-      _globeTransPins = _currentPins.isEmpty
-          ? ref.read(filteredPinsProvider)
-                .map((p) => ClusterItem(lat: p.latitude, lng: p.longitude, count: 1))
-                .toList()
-          : _currentPins
-                .map((p) => ClusterItem(lat: p.latitude, lng: p.longitude, count: 1))
-                .toList();
+      _globeTransPins = capturePins;
       _globeTransEntering = false;
       _globeTransZoom = 11.0;
       _globeTransCenterLat = targetLat;
@@ -1114,13 +1378,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     });
 
     HapticFeedback.mediumImpact();
-
-    // flyTo 시작 전 마커 즉시 삭제 — 애니메이션 중 잔상 방지
-    await _pinManager?.deleteAll();
-    _pinAnnotationIds.clear();
-    _clusterIds.clear();
-    _annotationByKey.clear();
-    _liveClusters = [];
 
     _mapboxMap!.flyTo(
       CameraOptions(
@@ -1131,11 +1388,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       MapAnimationOptions(duration: 1400),
     );
 
+    // 이미 opacity=0 이므로 시각적 영향 없이 삭제
+    await _pinManager?.deleteAll();
+    _pinAnnotationIds.clear();
+    _clusterIds.clear();
+    _annotationByKey.clear();
+    _liveClusters = [];
+
     // 애니메이션 실제 완료까지 대기 (duration + 100ms 여유)
-    await Future.delayed(const Duration(milliseconds: 1500));
+    await Future.delayed(const Duration(milliseconds: 1350));
 
     if (mounted) {
       setState(() => _isGlobeTransitioning = false);
+      // 새 마커 추가 전 opacity 복원
+      await _pinManager?.setIconOpacity(1.0);
       _updateMarkers(ref.read(filteredPinsProvider));
     }
   }
@@ -1468,6 +1734,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _pinManager = await mapboxMap.annotations.createPointAnnotationManager();
     _locationManager = await mapboxMap.annotations
         .createPointAnnotationManager();
+    _donghaengManager = await mapboxMap.annotations
+        .createPointAnnotationManager();
 
     _tapSubscription = _pinManager!.tapEvents(
       onTap: (annotation) {
@@ -1516,7 +1784,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       },
     );
 
-    setState(() => _mapReady = true);
+    setState(() {
+      _mapReady = true;
+      _mapInitialized = true;
+    });
 
     final pins = ref.read(filteredPinsProvider);
     await _updateMarkers(pins);
@@ -1584,6 +1855,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
     });
 
+    // 동행 세션 → 마커 업데이트
+    ref.listen(donghaengProvider, (prev, next) {
+      if (next.session != prev?.session ||
+          next.myLat != prev?.myLat ||
+          next.myLng != prev?.myLng) {
+        _updateDonghaengMarkers(next);
+      }
+    });
+
     // 약속 위치 업데이트 → 화면 좌표 재계산
     ref.listen(meetingProvider, (prev, next) {
       if (next.isApproaching &&
@@ -1604,21 +1884,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       MapStyleOption.streets => 'mapbox://styles/mapbox/streets-v12',
     };
 
-    final bool controlsVisible = !_isGlobeMode && !_isGlobeTransitioning;
+    final bool controlsVisible = _mapInitialized && !_isGlobeMode && !_isGlobeTransitioning;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: (_isGlobeMode || _isGlobeTransitioning)
           ? SystemUiOverlayStyle.light
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF050B1A),
         body: Stack(
           children: [
             // ── Mapbox 지도 ───────────────────────────────────────────────
             MapWidget(
               styleUri: styleUri,
+              viewport: CameraViewportState(
+                center: Point(coordinates: Position(_cameraCenterLng, _cameraCenterLat)),
+                zoom: _zoom,
+                pitch: 0,
+                bearing: 0,
+              ),
               onMapCreated: _onMapCreated,
               onCameraChangeListener: (data) {
+                if (!_mapInitialized) return;
                 final newZoom = data.cameraState.zoom;
                 final center = data.cameraState.center.coordinates;
                 _cameraCenterLat = center.lat.toDouble();
@@ -1694,7 +1981,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             // ── 현재 위치 버튼 (우측 하단) ───────────────────────────────
             Positioned(
               right: 16,
-              bottom: MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 10,
+              bottom: MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 89,
               child: AnimatedOpacity(
                 opacity: controlsVisible ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 280),
@@ -1799,7 +2086,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               Positioned(
                 left: 12,
                 right: 12,
-                bottom: MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 16,
+                bottom: MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 89,
                 child: _RoutePanel(
                   pins: _routePins!,
                   dateLabel: _routeDate,
@@ -1817,6 +2104,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   ),
                 ),
               ),
+
+            // ── 동행 세션 패널 ────────────────────────────────────────────
+            const DonghaengSessionPanel(),
 
             // ── Recap 위치 배너 ───────────────────────────────────────────
             if (_recapBannerPin != null)
