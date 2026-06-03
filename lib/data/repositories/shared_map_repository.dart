@@ -19,20 +19,21 @@ class SharedMapRepository {
 
   /// Returns public/friend-visible pins from the given friend UIDs.
   /// Gracefully returns empty if the `pins` table doesn't exist yet.
-  Future<List<SharedPinEntry>> fetchFriendPins(List<String> friendUids) async {
+  Future<List<SharedPinEntry>> fetchFriendPins(
+      List<String> friendUids, Map<String, String> uidToNickname) async {
     if (friendUids.isEmpty) return [];
     try {
       final rows = await _db
           .from('pins')
-          .select('*, users!pins_uid_fkey(nickname)')
+          .select('*')
           .inFilter('uid', friendUids)
           .inFilter('visibility', ['🌐 전체 공개', '👥 친구 공개']);
 
       return rows.map((r) {
-        final userRow = r['users'] as Map<String, dynamic>?;
-        final nickname = userRow?['nickname'] as String? ?? '친구';
+        final uid = r['uid'] as String;
+        final nickname = uidToNickname[uid] ?? '친구';
         return SharedPinEntry(
-          ownerUid: r['uid'] as String,
+          ownerUid: uid,
           ownerNickname: nickname,
           pin: PinModel(
             id: r['id'] as String,

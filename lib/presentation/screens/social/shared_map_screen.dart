@@ -16,11 +16,21 @@ import '../../widgets/map/pin_detail_sheet.dart';
 final _sharedMapRepoProvider = Provider((_) => SharedMapRepository());
 
 final _sharedPinsProvider =
-    FutureProvider.autoDispose.family<List<SharedPinEntry>, List<String>>(
-        (ref, friendUids) async {
+    FutureProvider.autoDispose<List<SharedPinEntry>>((ref) async {
+  final friends = ref.watch(friendsProvider);
+  final friendUids = friends
+      .map((f) => f.supabaseUid)
+      .whereType<String>()
+      .where((u) => u.isNotEmpty)
+      .toList();
+  final uidToNickname = <String, String>{
+    for (final f in friends)
+      if (f.supabaseUid != null && f.supabaseUid!.isNotEmpty)
+        f.supabaseUid!: f.name,
+  };
   final repo = ref.read(_sharedMapRepoProvider);
   final myUid = Supabase.instance.client.auth.currentUser?.id ?? '';
-  final friendPins = await repo.fetchFriendPins(friendUids);
+  final friendPins = await repo.fetchFriendPins(friendUids, uidToNickname);
   final myPins = myUid.isNotEmpty
       ? await repo.fetchMyPublicPins(myUid)
       : <SharedPinEntry>[];
@@ -84,11 +94,7 @@ class _SharedMapScreenState extends ConsumerState<SharedMapScreen> {
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
-    final friendUids = friends
-        .map((f) => f.supabaseUid ?? '')
-        .where((u) => u.isNotEmpty)
-        .toList();
-    final pinsAsync = ref.watch(_sharedPinsProvider(friendUids));
+    final pinsAsync = ref.watch(_sharedPinsProvider);
     final themeColor = context.primaryColor;
     final myUid = Supabase.instance.client.auth.currentUser?.id ?? '';
     final topPad = MediaQuery.of(context).padding.top;
