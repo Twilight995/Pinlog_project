@@ -1032,7 +1032,7 @@ class _ProfileCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'welcome back · $subtitle',
+                          subtitle.isEmpty ? 'welcome back' : 'welcome back · $subtitle',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -2520,7 +2520,18 @@ class _AccountSection extends StatelessWidget {
                 iconColor: mutedColor,
                 label: '이메일',
                 subtitle: email,
-                onTap: null,
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: email));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('이메일이 복사됐어요'),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
                 isLast: !isEmailUser,
               ),
               if (isEmailUser) ...[

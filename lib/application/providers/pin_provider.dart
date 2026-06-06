@@ -51,6 +51,10 @@ class PinsNotifier extends StateNotifier<List<PinModel>> {
     await loadFromServer();
   }
 
+  void clearState() {
+    state = [];
+  }
+
   Future<void> add(PinModel pin) async {
     await _repo.save(pin);
     load();

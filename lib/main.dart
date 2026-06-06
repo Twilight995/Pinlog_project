@@ -1,6 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
-import 'dart:ui';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +11,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'application/providers/theme_provider.dart';
 import 'application/services/fcm_service.dart';
 import 'application/services/notification_service.dart';
-import 'application/services/social_service.dart';
 import 'core/firebase_options.dart';
 import 'core/secrets.dart';
 import 'core/theme/app_theme.dart';
@@ -74,20 +72,18 @@ void main() async {
   await Hive.openBox<dynamic>('settings');
   await PinRepository.init();
   await ProfileRepository.init();
-  await _seedTestRouteIfNeeded();
-  await _seedDemoCategoriesIfNeeded();
+  if (kDebugMode) {
+    await _seedTestRouteIfNeeded();
+    await _seedDemoCategoriesIfNeeded();
+  }
+  await _removeLegacySeedPinsIfNeeded();
   await _migrateLandmarkPhotosIfNeeded();
   await _migratePinPhotosV2IfNeeded();
   await _migratePinPhotosV3IfNeeded();
   await _migratePinPhotosV4IfNeeded();
-  // 세션이 있을 때만 users 테이블 프로필 동기화 (세션 없으면 SocialService._uid == null → 자동 skip)
-  try {
-    final profileRepo = ProfileRepository();
-    await SocialService().createOrUpdateUser(
-      friendCode: profileRepo.getFriendCode(),
-      nickname: profileRepo.getNickname(),
-    );
-  } catch (_) {}
+  // Note: createOrUpdateUser intentionally NOT called here.
+  // Calling it at startup would create a users row with default values,
+  // which causes _checkIsNewUser() to skip onboarding for new accounts.
 
   // FCM 알림 초기화
   try { await FCMService.instance.init(); } catch (_) {}
@@ -120,10 +116,11 @@ void main() async {
 
 // 새 카테고리(cafe/drinking/shopping/drive/running) 데모 핀 (최초 1회만)
 Future<void> _seedDemoCategoriesIfNeeded() async {
-  const sentinel = 'demo_cafe_001';
-  final repo = PinRepository();
-  if (repo.getAll().any((p) => p.id == sentinel)) return;
+  const settingsKey = 'seed_demo_categories_v1';
+  final box = Hive.box<dynamic>('settings');
+  if (box.get(settingsKey) == true) return;
 
+  final repo = PinRepository();
   final now = DateTime.now();
   final seeds = <PinModel>[
     PinModel(
@@ -197,14 +194,16 @@ Future<void> _seedDemoCategoriesIfNeeded() async {
   for (final pin in seeds) {
     await repo.save(pin);
   }
+  await box.put(settingsKey, true);
 }
 
 // 잠실→한강→뚝섬→광화문 테스트 경로 핀 (2026-04-28, 최초 1회만)
 Future<void> _seedTestRouteIfNeeded() async {
-  const sentinel = 'test_route_001';
-  final repo = PinRepository();
-  if (repo.getAll().any((p) => p.id == sentinel)) return;
+  const settingsKey = 'seed_test_route_v1';
+  final box = Hive.box<dynamic>('settings');
+  if (box.get(settingsKey) == true) return;
 
+  final repo = PinRepository();
   final pins = [
     PinModel(
       id: 'test_route_001',
@@ -307,6 +306,34 @@ Future<void> _seedTestRouteIfNeeded() async {
   for (final pin in pins) {
     await repo.save(pin);
   }
+  await box.put(settingsKey, true);
+}
+
+// seed-1..6 하드코딩 가짜 핀 제거 — uid 없이 심어진 핀이 계정 간 노출되던 버그 수정
+Future<void> _removeLegacySeedPinsIfNeeded() async {
+  const settingsKey = 'remove_seed_pins_v1';
+  final box = Hive.box<dynamic>('settings');
+  if (box.get(settingsKey) == true) return;
+
+  const legacyIds = ['seed-1', 'seed-2', 'seed-3', 'seed-4', 'seed-5', 'seed-6'];
+  final repo = PinRepository();
+  for (final id in legacyIds) {
+    await repo.delete(id);
+  }
+
+  // 서버에도 혹시 업로드된 경우 동시 정리
+  final uid = Supabase.instance.client.auth.currentUser?.id;
+  if (uid != null) {
+    try {
+      await Supabase.instance.client
+          .from('pins')
+          .delete()
+          .inFilter('id', legacyIds)
+          .eq('uid', uid);
+    } catch (_) {}
+  }
+
+  await box.put(settingsKey, true);
 }
 
 // 랜드마크 데모 핀에 번들 사진 할당 (최초 1회만)

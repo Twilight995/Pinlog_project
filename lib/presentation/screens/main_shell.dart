@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../application/providers/auth_provider.dart';
 import '../../application/providers/nav_provider.dart';
 import '../../application/providers/pin_provider.dart';
 import '../../application/services/notification_service.dart';
@@ -14,6 +15,7 @@ import '../widgets/recap/recap_popup.dart';
 import 'activity/activity_screen.dart';
 import 'feed/feed_screen.dart';
 import 'map/map_screen.dart';
+import 'onboarding/onboarding_screen.dart';
 import 'profile/profile_screen.dart';
 
 class MainShell extends ConsumerStatefulWidget {
@@ -42,9 +44,14 @@ class _MainShellState extends ConsumerState<MainShell> {
     super.dispose();
   }
 
-  void _onAuthStateChange(AuthState state) {
-    if (state.event == AuthChangeEvent.signedIn) {
+  void _onAuthStateChange(AuthState authState) {
+    if (authState.event == AuthChangeEvent.signedIn) {
+      // 다른 계정 핀이 일시 노출되지 않도록 서버 로드 완료 전까지 state 비움
+      ref.read(pinsProvider.notifier).clearState();
       ref.read(pinsProvider.notifier).loadFromServer();
+    } else if (authState.event == AuthChangeEvent.signedOut) {
+      // 로그아웃 즉시 메모리에서 핀 제거 — 다음 로그인 계정에 노출 방지
+      ref.read(pinsProvider.notifier).clearState();
     }
   }
 
@@ -67,6 +74,26 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    // 세션은 있지만 온보딩 미완료 상태(force-close 후 재진입 등)를 처리
+    ref.listen(pinlogAuthProvider, (prev, next) {
+      if (next.isNewUser && !(prev?.isNewUser ?? false) && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageRouteBuilder<void>(
+            pageBuilder: (ctx, a1, a2) => OnboardingScreen(
+              initialNickname: next.provisionalNickname,
+              initialAvatarUrl: next.provisionalAvatarUrl,
+            ),
+            transitionsBuilder: (ctx, anim, a2, child) => FadeTransition(
+              opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+              child: child,
+            ),
+            transitionDuration: const Duration(milliseconds: 500),
+          ),
+          (_) => false,
+        );
+      }
+    });
+
     final activeTab = ref.watch(activeTabProvider);
     final isGlobeMode = ref.watch(globeModeProvider);
 

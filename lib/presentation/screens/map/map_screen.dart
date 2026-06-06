@@ -675,6 +675,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   final Set<String> _shownRecapIds = {};
   PinModel? _recapBannerPin;
 
+  // 롱프레스 핀 생성 — 1.5초 홀드 후 PinWizardScreen 진입
+  Timer? _longPressTimer;
+  bool _longPressActive = false;
+  Offset? _longPressScreenPos;
+  ll.LatLng? _longPressLatLng;
+
   @override
   void initState() {
     super.initState();
@@ -699,6 +705,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _tapSubscription?.cancel();
     _recapGpsSub?.cancel();
     _cameraSaveTimer?.cancel();
+    _longPressTimer?.cancel();
     super.dispose();
   }
 
@@ -1693,6 +1700,43 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     ));
   }
 
+  // ─── 지도 롱프레스 (1.5s) → 핀 생성 ──────────────────────────────────────
+
+  void _onMapLongTap(MapContentGestureContext ctx) {
+    if (_mapboxMap == null || _isGlobeTransitioning || _isGlobeMode) return;
+    if (_zoom < 4) return;
+
+    final lat = ctx.point.coordinates.lat.toDouble();
+    final lng = ctx.point.coordinates.lng.toDouble();
+    final sx = ctx.touchPosition.x.toDouble();
+    final sy = ctx.touchPosition.y.toDouble();
+
+    _longPressTimer?.cancel();
+    setState(() {
+      _longPressActive = true;
+      _longPressScreenPos = Offset(sx, sy);
+      _longPressLatLng = ll.LatLng(lat, lng);
+    });
+
+    // SDK long-tap fires at ~0.5s; we wait 1s more → ~1.5s total
+    _longPressTimer = Timer(const Duration(milliseconds: 1000), () {
+      if (!mounted) return;
+      final loc = _longPressLatLng;
+      setState(() {
+        _longPressActive = false;
+        _longPressScreenPos = null;
+        _longPressLatLng = null;
+      });
+      if (loc != null) {
+        HapticFeedback.mediumImpact();
+        Navigator.of(context).push(MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => PinWizardScreen(location: loc),
+        ));
+      }
+    });
+  }
+
   // ─── 레이어 시트 ──────────────────────────────────────────────────────────
 
   void _showFilterModal(BuildContext ctx) {
@@ -2030,6 +2074,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 }
               },
               onTapListener: _onMapTap, // ignore: deprecated_member_use
+              onLongTapListener: _onMapLongTap, // ignore: deprecated_member_use
             ),
 
             // ── 일반 지도 컨트롤 ─────────────────────────────────────────
@@ -2193,6 +2238,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 onDismiss: () => setState(() => _recapBannerPin = null),
               ),
 
+            // ── 롱프레스 리플 오버레이 ────────────────────────────────────
+            if (_longPressActive && _longPressScreenPos != null)
+              Positioned(
+                left: _longPressScreenPos!.dx - 45,
+                top: _longPressScreenPos!.dy - 45,
+                child: IgnorePointer(
+                  child: TweenAnimationBuilder<double>(
+                    key: ValueKey(_longPressScreenPos),
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 1000),
+                    curve: Curves.easeOut,
+                    builder: (ctx2, t, child) => CustomPaint(
+                      size: const Size(90, 90),
+                      painter: _LongPressRipplePainter(
+                        progress: t,
+                        color: ref.read(themePresetProvider).primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
           ],
         ),
       ),
@@ -2229,12 +2296,12 @@ class _MapControls extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.only(left: 16, top: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── 항상 보이는 버튼: 경로 ─────────────────────────────────
+            // ── 경로 버튼 (항상 고정 앵커) ────────────────────────────
             GestureDetector(
               onTap: onPolylineTap,
               child: ClipRRect(
@@ -2272,13 +2339,9 @@ class _MapControls extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(width: 8),
 
-            // ── 항상 보이는 버튼: 필터 ─────────────────────────────────
-            GlassButton(icon: Icons.tune, onTap: onFilterTap, size: 44),
-            const SizedBox(height: 10),
-
-            // ── 토글 버튼 ───────────────────────────────────────────────
+            // ── 토글 버튼 (펼침/접힘 ▶/◀) ────────────────────────────
             GestureDetector(
               onTap: onToggle,
               child: ClipRRect(
@@ -2305,7 +2368,7 @@ class _MapControls extends StatelessWidget {
                       duration: const Duration(milliseconds: 280),
                       curve: Curves.easeOutCubic,
                       child: Icon(
-                        Icons.keyboard_arrow_down_rounded,
+                        Icons.chevron_right_rounded,
                         size: 22,
                         color: context.labelColor,
                       ),
@@ -2315,50 +2378,40 @@ class _MapControls extends StatelessWidget {
               ),
             ),
 
-            // ── 슬라이드 펼침: 지구본 + 지도 테마 ─────────────────────
+            // ── 펼침: 오른쪽으로 수평 확장, 넘치면 스크롤 ────────────
             AnimatedSize(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
+              alignment: Alignment.centerLeft,
               child: AnimatedOpacity(
                 opacity: isExpanded ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 220),
+                duration: const Duration(milliseconds: 200),
                 child: isExpanded
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 10),
-                          GlassButton(
-                            icon: Icons.public_rounded,
-                            onTap: onGlobeTap,
-                            size: 44,
-                          ),
-                          const SizedBox(height: 10),
-                          GlassButton(
-                            icon: Icons.layers_outlined,
-                            onTap: onLayerTap,
-                            size: 44,
-                          ),
-                          const SizedBox(height: 10),
-                          Container(
-                            width: 44,
-                            height: 1,
-                            color: Colors.white.withValues(alpha: 0.12),
-                          ),
-                          const SizedBox(height: 10),
-                          GlassButton(
-                            icon: Icons.event_rounded,
-                            onTap: onMeetingTap,
-                            size: 44,
-                          ),
-                          const SizedBox(height: 10),
-                          GlassButton(
-                            icon: Icons.people_rounded,
-                            onTap: onFriendsTap,
-                            size: 44,
-                          ),
-                        ],
+                    ? SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(width: 8),
+                            GlassButton(icon: Icons.tune, onTap: onFilterTap, size: 44),
+                            const SizedBox(width: 8),
+                            GlassButton(icon: Icons.public_rounded, onTap: onGlobeTap, size: 44),
+                            const SizedBox(width: 8),
+                            GlassButton(icon: Icons.layers_outlined, onTap: onLayerTap, size: 44),
+                            const SizedBox(width: 10),
+                            Container(
+                              width: 1,
+                              height: 24,
+                              color: Colors.white.withValues(alpha: 0.20),
+                            ),
+                            const SizedBox(width: 10),
+                            GlassButton(icon: Icons.event_rounded, onTap: onMeetingTap, size: 44),
+                            const SizedBox(width: 8),
+                            GlassButton(icon: Icons.people_rounded, onTap: onFriendsTap, size: 44),
+                            const SizedBox(width: 8),
+                          ],
+                        ),
                       )
                     : const SizedBox.shrink(),
               ),
@@ -3437,4 +3490,63 @@ class _MapStylePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MapStylePainter old) => old.style != style;
+}
+
+// ─── 롱프레스 리플 페인터 ────────────────────────────────────────────────────
+
+class _LongPressRipplePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+
+  const _LongPressRipplePainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxR = size.width / 2;
+
+    // Expanding translucent fill
+    canvas.drawCircle(
+      center,
+      maxR * progress,
+      Paint()
+        ..color = color.withValues(alpha: 0.18 * (1.0 - progress * 0.4))
+        ..style = PaintingStyle.fill,
+    );
+
+    // Expanding ring
+    canvas.drawCircle(
+      center,
+      maxR * progress,
+      Paint()
+        ..color = color.withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
+    );
+
+    // Progress arc (outer, fixed radius)
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: maxR - 3),
+      -math.pi / 2,
+      2 * math.pi * progress,
+      false,
+      Paint()
+        ..color = color.withValues(alpha: 0.95)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Center dot
+    canvas.drawCircle(
+      center,
+      3.5 + 2.0 * progress,
+      Paint()
+        ..color = color.withValues(alpha: 0.9)
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LongPressRipplePainter old) => old.progress != progress;
 }
