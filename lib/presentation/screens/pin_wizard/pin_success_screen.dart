@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../application/providers/pin_provider.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// 핀 생성 성공 모먼트.
@@ -15,6 +16,8 @@ class PinSuccessScreen extends ConsumerWidget {
   final String? locationLabel;
   final String categorySvgPath;
   final String categoryName;
+  final String? emotion;
+  final String? countryCode;
 
   const PinSuccessScreen({
     super.key,
@@ -22,6 +25,8 @@ class PinSuccessScreen extends ConsumerWidget {
     required this.categorySvgPath,
     required this.categoryName,
     this.locationLabel,
+    this.emotion,
+    this.countryCode,
   });
 
   void _back(BuildContext context) {
@@ -64,15 +69,20 @@ class PinSuccessScreen extends ConsumerWidget {
                 opacity: 0.16,
                 colorStop: 0.55,
               ),
-              // 구슬 + 물결 + 별 — pencil 픽셀 좌표 그대로
-              _OrbStage(scale: scale),
+              // 핀 아이콘 + 감정 + 국기 비주얼
+              _PinMemoryVisual(
+                scale: scale,
+                categorySvgPath: categorySvgPath,
+                emotion: emotion,
+                countryCode: countryCode,
+              ),
               // 텍스트 + 버튼
               SafeArea(
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(20, 0, 20, 28 * scale),
                   child: Column(
                     children: [
-                      SizedBox(height: 430 * scale),
+                      SizedBox(height: 390 * scale),
                       const Text(
                         '기억이',
                         style: TextStyle(
@@ -203,236 +213,199 @@ class _BgGlow extends StatelessWidget {
 // ─── 구슬 + 물결 + 별 ─────────────────────────────────────────────────
 // Pencil x/y 좌표 그대로 + scale 적용.
 
-class _OrbStage extends StatelessWidget {
+// ─── 핀 메모리 비주얼 (핀 마커 + 감정 + 국기) ────────────────────────────────
+
+class _PinMemoryVisual extends StatelessWidget {
   final double scale;
-  const _OrbStage({required this.scale});
+  final String categorySvgPath;
+  final String? emotion;
+  final String? countryCode;
 
-  /// Pencil 좌표대로 Positioned 헬퍼.
-  Widget _at({
-    required double x,
-    required double y,
-    required Widget child,
-  }) {
-    return Positioned(
-      left: x * scale,
-      top: y * scale,
-      child: child,
-    );
-  }
-
-  Widget _radial({
-    required double size,
-    required List<Color> colors,
-    required List<double> stops,
-    double opacity = 1.0,
-  }) {
-    final s = size * scale;
-    return Opacity(
-      opacity: opacity,
-      child: Container(
-        width: s,
-        height: s,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            radius: 0.5,
-            colors: colors,
-            stops: stops,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _ovalGlow({
-    required double width,
-    required double height,
-    required List<Color> colors,
-    required List<double> stops,
-    double opacity = 1.0,
-  }) {
-    return Opacity(
-      opacity: opacity,
-      child: Container(
-        width: width * scale,
-        height: height * scale,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          gradient: RadialGradient(
-            radius: 0.5,
-            colors: colors,
-            stops: stops,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _ripple({
-    required double width,
-    required double height,
-    required double opacity,
-    double thickness = 1.0,
-  }) {
-    return IgnorePointer(
-      child: Container(
-        width: width * scale,
-        height: height * scale,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: const Color(0xFFA78BFA).withValues(alpha: opacity),
-            width: thickness * scale,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _dot({required double size, required Color color, required double opacity}) {
-    final s = size * scale;
-    return IgnorePointer(
-      child: Container(
-        width: s,
-        height: s,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color.withValues(alpha: opacity),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: opacity * 0.6),
-              blurRadius: s * 1.2,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  const _PinMemoryVisual({
+    required this.scale,
+    required this.categorySvgPath,
+    required this.emotion,
+    required this.countryCode,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // ── 외곽 헤일로 (320×320 @ 55,50) ──
-        _at(
-          x: 55,
-          y: 50,
-          child: _radial(
-            size: 320,
-            colors: const [Color(0xFFA78BFA), Colors.black],
-            stops: const [0.0, 0.45],
-            opacity: 0.4,
+    final accent = context.primaryColor;
+    final lighter = Color.lerp(accent, Colors.white, 0.40)!;
+    final darker = Color.lerp(accent, Colors.black, 0.10)!;
+    final bodyColor = HSLColor.fromColor(accent)
+        .withLightness(0.12)
+        .withSaturation((HSLColor.fromColor(accent).saturation * 0.55).clamp(0.0, 1.0))
+        .toColor();
+
+    final emotionSvg = AppConstants.emotionSvgPath(emotion);
+    final flagSvg = (countryCode != null && countryCode != 'KR')
+        ? AppConstants.flagSvgPath(countryCode)
+        : null;
+
+    // 물결 ripple 렌더 헬퍼 — 핀 바텀(65+110=175pt) 아래부터 시작
+    Widget ripple(double w, double h, double opacity) => Container(
+          width: w * scale,
+          height: h * scale,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: accent.withValues(alpha: opacity),
+              width: 1.0 * scale,
+            ),
           ),
+        );
+
+    // 별 dot 렌더 헬퍼
+    Widget dot(double size, Color color, double opacity) {
+      final s = size * scale;
+      return Container(
+        width: s, height: s,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: opacity),
+          boxShadow: [BoxShadow(color: color.withValues(alpha: opacity * 0.4), blurRadius: s * 1.5)],
         ),
-        // ── 미드 헤일로 (240×240 @ 95,90) ──
-        _at(
-          x: 95,
-          y: 90,
-          child: _radial(
-            size: 240,
-            colors: const [Color(0xFFC7BFFF), Colors.black],
-            stops: const [0.0, 0.5],
-            opacity: 0.4,
+      );
+    }
+
+    // 서브 아이콘 카드 (감정/국기) — 핀 옆, 겹치지 않게
+    Widget iconCard({required Widget child}) => Container(
+          width: 52 * scale,
+          height: 52 * scale,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.08),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.20), width: 1.2),
+            boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.30), blurRadius: 16 * scale)],
           ),
-        ),
-        // ── 크리스탈 구슬 본체 (200×200 @ 115,130) ──
-        _at(
-          x: 115,
-          y: 130,
-          child: _radial(
-            size: 200,
-            colors: const [
-              Color(0xFFF0F4FF),
-              Color(0xFFA78BFA),
-              Color(0xFF1E1640),
-            ],
-            stops: const [0.15, 0.65, 0.95],
-            opacity: 0.95,
-          ),
-        ),
-        // ── 내부 빛 (100×100 @ 165,180) ──
-        _at(
-          x: 165,
-          y: 180,
-          child: _radial(
-            size: 100,
-            colors: const [
-              Color(0xFFFFFFFF),
-              Color(0xFFC7BFFF),
-              Color(0xFFA78BFA),
-            ],
-            stops: const [0.0, 0.6, 1.0],
-            opacity: 0.85,
-          ),
-        ),
-        // ── 글래스 하이라이트 (60×40 @ 140,150) ──
-        _at(
-          x: 140,
-          y: 150,
-          child: _ovalGlow(
-            width: 60,
-            height: 40,
-            colors: const [Colors.white, Color(0x00FFFFFF)],
-            stops: const [0.0, 1.0],
-            opacity: 0.7,
-          ),
-        ),
-        // ── 작은 흰 반짝 (14×14 @ 150,160) ──
-        _at(
-          x: 150,
-          y: 160,
-          child: IgnorePointer(
-            child: Opacity(
-              opacity: 0.95,
-              child: Container(
-                width: 14 * scale,
-                height: 14 * scale,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      blurRadius: 8 * scale,
-                    ),
-                  ],
+          child: Center(child: child),
+        );
+
+    // 핀 마커 크기: 110pt
+    final pinSize = 110.0 * scale;
+    final pinR = pinSize / 2;
+    // 핀 top: 노치/Dynamic Island 아래 충분한 여백 확보 (90pt)
+    const pinTop = 90.0;
+    // 아이콘 카드 위치 (design-space 기준, 430px 폭)
+    // 핀 중심 y = 90+55 = 145, 카드 높이=52 → top = 145-26 = 119
+    // 핀 중심 x=215, 반지름=55, 카드폭=52, 간격=10 → left/right = 98
+    final iconCardTop = 119.0 * scale;
+    const iconCardHOffset = 98.0; // design-space left/right
+
+    return SizedBox(
+      width: double.infinity,
+      height: 370 * scale,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          // 배경 글로우
+          Positioned(
+            top: 40 * scale,
+            child: Container(
+              width: 240 * scale, height: 240 * scale,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [accent.withValues(alpha: 0.28), Colors.transparent],
+                  stops: const [0.0, 1.0],
                 ),
               ),
             ),
           ),
-        ),
-        // ── 하단 반사 (100×14 @ 165,310) ──
-        _at(
-          x: 165,
-          y: 310,
-          child: _ovalGlow(
-            width: 100,
-            height: 14,
-            colors: const [Color(0xFFC7BFFF), Color(0x00A78BFA)],
-            stops: const [0.0, 1.0],
-            opacity: 0.4,
+          // 물결 — 핀 바텀(90+110=200pt) 아래부터 펼쳐짐
+          Positioned(top: 207 * scale, child: ripple(180, 44, 0.50)),
+          Positioned(top: 225 * scale, child: ripple(240, 58, 0.30)),
+          Positioned(top: 247 * scale, child: ripple(310, 72, 0.16)),
+          Positioned(top: 269 * scale, child: ripple(380, 86, 0.08)),
+          // 별 파티클 (핀 주변)
+          Positioned(top: 60 * scale,  left: 45 * scale,  child: dot(6, Colors.white, 0.80)),
+          Positioned(top: 75 * scale,  right: 50 * scale, child: dot(4, Colors.white, 0.60)),
+          Positioned(top: 220 * scale, left: 35 * scale,  child: dot(4, Colors.white, 0.45)),
+          Positioned(top: 185 * scale, right: 30 * scale, child: dot(5, Colors.white, 0.70)),
+          Positioned(top: 125 * scale, left: 28 * scale,  child: dot(3, accent, 0.75)),
+          Positioned(top: 110 * scale, right: 25 * scale, child: dot(3, accent, 0.65)),
+          // ── 중앙 핀 마커 ──
+          Positioned(
+            top: pinTop * scale,
+            child: SizedBox(
+              width: pinSize, height: pinSize,
+              child: Stack(alignment: Alignment.center, children: [
+                // 글로우
+                Container(
+                  width: pinSize, height: pinSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: accent.withValues(alpha: 0.55), blurRadius: 36 * scale, spreadRadius: 2 * scale),
+                    ],
+                  ),
+                ),
+                // 그라디언트 테두리
+                ShaderMask(
+                  shaderCallback: (r) => LinearGradient(
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    colors: [lighter, darker],
+                  ).createShader(r),
+                  child: Container(
+                    width: pinSize, height: pinSize,
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                  ),
+                ),
+                // 바디
+                Container(
+                  width: pinSize - 6 * scale, height: pinSize - 6 * scale,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: bodyColor),
+                ),
+                // 상단 하이라이트
+                Positioned(
+                  top: pinR * 0.20, left: pinR * 0.58,
+                  child: Container(
+                    width: pinR * 0.70, height: pinR * 0.34,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      color: Colors.white.withValues(alpha: 0.14),
+                    ),
+                  ),
+                ),
+                // 핀 SVG 아이콘
+                if (categorySvgPath.isNotEmpty)
+                  SvgPicture.asset(
+                    categorySvgPath,
+                    width: pinR * 1.15,
+                    height: pinR * 1.15,
+                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                  ),
+              ]),
+            ),
           ),
-        ),
-        // ── 물결 4개 (구슬 아래로 캐스케이드) ──
-        _at(x: 115, y: 360, child: _ripple(width: 200, height: 50, opacity: 0.7, thickness: 1.5)),
-        _at(x: 85, y: 380, child: _ripple(width: 260, height: 64, opacity: 0.45)),
-        _at(x: 50, y: 404, child: _ripple(width: 330, height: 80, opacity: 0.28)),
-        _at(x: 10, y: 430, child: _ripple(width: 410, height: 96, opacity: 0.16)),
-        // ── 흰 별 6개 ──
-        _at(x: 80, y: 160, child: _dot(size: 8, color: Colors.white, opacity: 0.9)),
-        _at(x: 340, y: 200, child: _dot(size: 5, color: Colors.white, opacity: 0.7)),
-        _at(x: 60, y: 340, child: _dot(size: 6, color: Colors.white, opacity: 0.85)),
-        _at(x: 360, y: 380, child: _dot(size: 4, color: Colors.white, opacity: 0.6)),
-        _at(x: 100, y: 240, child: _dot(size: 3, color: Colors.white, opacity: 0.55)),
-        _at(x: 330, y: 300, child: _dot(size: 7, color: Colors.white, opacity: 0.8)),
-        // ── 컬러 입자 6개 (라벤더 톤) ──
-        _at(x: 90, y: 200, child: _dot(size: 4, color: const Color(0xFFC7BFFF), opacity: 0.85)),
-        _at(x: 330, y: 160, child: _dot(size: 3, color: const Color(0xFFA78BFA), opacity: 0.75)),
-        _at(x: 350, y: 280, child: _dot(size: 5, color: const Color(0xFFC7BFFF), opacity: 0.8)),
-        _at(x: 70, y: 380, child: _dot(size: 3, color: const Color(0xFFA78BFA), opacity: 0.6)),
-        _at(x: 300, y: 420, child: _dot(size: 4, color: const Color(0xFFC7BFFF), opacity: 0.7)),
-        _at(x: 55, y: 260, child: _dot(size: 2, color: const Color(0xFFFFFAF0), opacity: 0.5)),
-      ],
+          // ── 감정 아이콘 (좌측, 핀 중앙 수평) ──
+          if (emotionSvg != null)
+            Positioned(
+              top: iconCardTop,
+              left: iconCardHOffset * scale,
+              child: iconCard(
+                child: SvgPicture.asset(
+                  emotionSvg,
+                  width: 24 * scale, height: 24 * scale,
+                  colorFilter: ColorFilter.mode(accent, BlendMode.srcIn),
+                ),
+              ),
+            ),
+          // ── 국기 (우측, 해외일 때만) ──
+          if (flagSvg != null)
+            Positioned(
+              top: iconCardTop,
+              right: iconCardHOffset * scale,
+              child: iconCard(
+                child: SvgPicture.asset(
+                  flagSvg,
+                  width: 28 * scale, height: 28 * scale,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -213,7 +213,7 @@ class _StepTitleState extends State<StepTitle> {
                   children: _suggestionsFor(widget.data.pinShape).map((s) =>
                     GestureDetector(
                       onTap: () => _applyExample(s),
-                      child: _ExampleChip(text: s),
+                      child: _ExampleChip(text: s, selected: s == _ctrl.text),
                     ),
                   ).toList(),
                 ),
@@ -229,24 +229,30 @@ class _StepTitleState extends State<StepTitle> {
 
 class _ExampleChip extends StatelessWidget {
   final String text;
-  const _ExampleChip({required this.text});
+  final bool selected;
+  const _ExampleChip({required this.text, this.selected = false});
 
   @override
   Widget build(BuildContext context) {
     final ws = context.ws;
-    return Container(
+    final accent = context.primaryColor;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: ws.surface,
+        color: selected ? accent.withValues(alpha: 0.12) : ws.surface,
         borderRadius: BorderRadius.circular(AppTokens.radiusPill),
-        border: Border.all(color: ws.surfaceBorder),
+        border: Border.all(
+          color: selected ? accent.withValues(alpha: 0.65) : ws.surfaceBorder,
+          width: selected ? 1.5 : 1.0,
+        ),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: ws.onSurface.withValues(alpha: 0.65),
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: selected ? accent : ws.onSurface.withValues(alpha: 0.65),
           fontFamily: AppTokens.fontBody,
         ),
       ),

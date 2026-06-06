@@ -22,8 +22,6 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
-	<key>CFBundleVersion</key>
-	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -34,9 +32,37 @@
 				<string>io.supabase.pinlog</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>kakao</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kakao36e9bdb04487ae3ee8fa088e2b627ee4</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>kakaokompassauth</string>
+		<string>storykompassauth</string>
+		<string>kakaolink</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>핀에 사진을 촬영하기 위해 카메라 접근이 필요합니다.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>동행 중 실시간 위치 공유를 위해 위치 접근이 필요합니다.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>동행 중 백그라운드에서도 위치를 공유하기 위해 위치 접근이 필요합니다.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>현재 위치를 지도에 표시하기 위해 위치 접근이 필요합니다.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>사진을 저장하기 위해 사진첩 접근이 필요합니다.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>핀에 사진을 추가하거나 프로필 사진을 설정하기 위해 사진 접근이 필요합니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -60,23 +86,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>현재 위치를 지도에 표시하기 위해 위치 접근이 필요합니다.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>동행 중 실시간 위치 공유를 위해 위치 접근이 필요합니다.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>동행 중 백그라운드에서도 위치를 공유하기 위해 위치 접근이 필요합니다.</string>
 	<key>UIBackgroundModes</key>
 	<array>
-		<string>location</string>
 		<string>fetch</string>
 	</array>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>핀에 사진을 추가하거나 프로필 사진을 설정하기 위해 사진 접근이 필요합니다.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>핀에 사진을 촬영하기 위해 카메라 접근이 필요합니다.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>사진을 저장하기 위해 사진첩 접근이 필요합니다.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

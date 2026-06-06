@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../application/providers/auth_provider.dart';
+import '../../../application/providers/profile_provider.dart';
 import '../main_shell.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -223,9 +224,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     if (_completing) return;
     setState(() => _completing = true);
 
+    final avatarUrl = _uploadedAvatarUrl ?? widget.initialAvatarUrl;
     await ref.read(pinlogAuthProvider.notifier).completeOnboarding(
           nickname: _nicknameCtrl.text.trim(),
-          avatarUrl: _uploadedAvatarUrl ?? widget.initialAvatarUrl,
+          avatarUrl: avatarUrl,
+        );
+    // profileProvider 상태 즉시 갱신 (Hive 저장만으론 UI 반영 안 됨)
+    await ref.read(profileProvider.notifier).update(
+          nickname: _nicknameCtrl.text.trim(),
+          photoPath: avatarUrl,
         );
   }
 

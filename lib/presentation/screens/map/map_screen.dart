@@ -27,9 +27,11 @@ import '../../widgets/map/donghaeng_panel.dart';
 import '../../widgets/meeting/meeting_bottom_sheet.dart';
 import '../../widgets/meeting/meeting_overlay.dart';
 import '../../widgets/map/filter_sheet.dart';
+import '../../widgets/meeting/meeting_create_sheet.dart';
 import '../../widgets/recap/recap_popup.dart';
 import '../pin_wizard/pin_wizard_screen.dart';
 import '../../widgets/map/pin_detail_sheet.dart';
+import '../social/friends_screen.dart';
 
 // ─── 지구본 모드 상수 ──────────────────────────────────────────────────────────
 const double _kGlobeEnterZoom = 4.5;
@@ -71,31 +73,31 @@ const _countrySvgs = <String, String>{
   'ID': 'lib/img/flag/flag-for-indonesia-svgrepo-com.svg',
   'PH': 'lib/img/flag/flag-for-philippines-svgrepo-com.svg',
   'AU': 'lib/img/flag/flag-for-australia-svgrepo-com.svg',
-  'CA': 'lib/img/canada-maple-leaf-svgrepo-com.svg',
-  'AT': 'lib/img/flag-for-flag-austria-svgrepo-com.svg',
-  'BR': 'lib/img/flag-for-flag-brazil-svgrepo-com.svg',
-  'KH': 'lib/img/flag-for-flag-cambodia-svgrepo-com.svg',
-  'DK': 'lib/img/flag-for-flag-denmark-svgrepo-com.svg',
-  'EG': 'lib/img/flag-for-flag-egypt-svgrepo-com.svg',
-  'GR': 'lib/img/flag-for-flag-greece-svgrepo-com.svg',
-  'HK': 'lib/img/flag-for-flag-hong-kong-sar-china-svgrepo-com.svg',
-  'HU': 'lib/img/flag-for-flag-hungary-svgrepo-com.svg',
-  'IN': 'lib/img/flag-for-flag-india-svgrepo-com.svg',
-  'LA': 'lib/img/flag-for-flag-laos-svgrepo-com.svg',
-  'MV': 'lib/img/flag-for-flag-maldives-svgrepo-com.svg',
-  'MX': 'lib/img/flag-for-flag-mexico-svgrepo-com.svg',
-  'MM': 'lib/img/flag-for-flag-myanmar-burma-svgrepo-com.svg',
-  'NP': 'lib/img/flag-for-flag-nepal-svgrepo-com.svg',
-  'NL': 'lib/img/flag-for-flag-netherlands-svgrepo-com.svg',
-  'NZ': 'lib/img/flag-for-flag-new-zealand-svgrepo-com.svg',
-  'NO': 'lib/img/flag-for-flag-norway-svgrepo-com.svg',
-  'PT': 'lib/img/flag-for-flag-portugal-svgrepo-com.svg',
-  'QA': 'lib/img/flag-for-flag-qatar-svgrepo-com.svg',
-  'LK': 'lib/img/flag-for-flag-sri-lanka-svgrepo-com.svg',
-  'SE': 'lib/img/flag-for-flag-sweden-svgrepo-com.svg',
-  'CH': 'lib/img/flag-for-flag-switzerland-svgrepo-com.svg',
-  'TR': 'lib/img/flag-for-flag-turkey-svgrepo-com.svg',
-  'AE': 'lib/img/united-arab-emirates-svgrepo-com.svg',
+  'CA': 'lib/img/flag/canada-maple-leaf-svgrepo-com.svg',
+  'AT': 'lib/img/flag/flag-for-flag-austria-svgrepo-com.svg',
+  'BR': 'lib/img/flag/flag-for-flag-brazil-svgrepo-com.svg',
+  'KH': 'lib/img/flag/flag-for-flag-cambodia-svgrepo-com.svg',
+  'DK': 'lib/img/flag/flag-for-flag-denmark-svgrepo-com.svg',
+  'EG': 'lib/img/flag/flag-for-flag-egypt-svgrepo-com.svg',
+  'GR': 'lib/img/flag/flag-for-flag-greece-svgrepo-com.svg',
+  'HK': 'lib/img/flag/flag-for-flag-hong-kong-sar-china-svgrepo-com.svg',
+  'HU': 'lib/img/flag/flag-for-flag-hungary-svgrepo-com.svg',
+  'IN': 'lib/img/flag/flag-for-flag-india-svgrepo-com.svg',
+  'LA': 'lib/img/flag/flag-for-flag-laos-svgrepo-com.svg',
+  'MV': 'lib/img/flag/flag-for-flag-maldives-svgrepo-com.svg',
+  'MX': 'lib/img/flag/flag-for-flag-mexico-svgrepo-com.svg',
+  'MM': 'lib/img/flag/flag-for-flag-myanmar-burma-svgrepo-com.svg',
+  'NP': 'lib/img/flag/flag-for-flag-nepal-svgrepo-com.svg',
+  'NL': 'lib/img/flag/flag-for-flag-netherlands-svgrepo-com.svg',
+  'NZ': 'lib/img/flag/flag-for-flag-new-zealand-svgrepo-com.svg',
+  'NO': 'lib/img/flag/flag-for-flag-norway-svgrepo-com.svg',
+  'PT': 'lib/img/flag/flag-for-flag-portugal-svgrepo-com.svg',
+  'QA': 'lib/img/flag/flag-for-flag-qatar-svgrepo-com.svg',
+  'LK': 'lib/img/flag/flag-for-flag-sri-lanka-svgrepo-com.svg',
+  'SE': 'lib/img/flag/flag-for-flag-sweden-svgrepo-com.svg',
+  'CH': 'lib/img/flag/flag-for-flag-switzerland-svgrepo-com.svg',
+  'TR': 'lib/img/flag/flag-for-flag-turkey-svgrepo-com.svg',
+  'AE': 'lib/img/flag/united-arab-emirates-svgrepo-com.svg',
 };
 
 // 핀 카테고리 → SVG 경로 (정적 마커용)
@@ -137,12 +139,11 @@ Future<Uint8List> _buildMarkerBitmap({
   if (_markerCache.containsKey(key)) return _markerCache[key]!;
 
   // 글로우 sigma(7px)×3 = 21px 여백 확보: 사각형 아티팩트 방지
-  // 원 반지름은 원본(단일 21pt, 클러스터 24pt)으로 고정 → 핀 크기 유지
-  final logicalSize = isCluster ? 94.0 : 88.0;
+  final logicalSize = isCluster ? 88.0 : 80.0;
   final pxSize = (logicalSize * pixelRatio).roundToDouble();
   final cx = pxSize / 2;
   final cy = pxSize / 2;
-  final r = pixelRatio * (isCluster ? 24.0 : 21.0);
+  final r = pixelRatio * (isCluster ? 20.0 : 17.0);
   final gradientRect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
 
   final bodyColor = bodyColorOverride ?? _pinBodyColor(themeColor);
@@ -201,7 +202,7 @@ Future<Uint8List> _buildMarkerBitmap({
     try {
       final loader = SvgAssetLoader(path);
       final info = await vg.loadPicture(loader, null);
-      final iconPx = r * 0.90;
+      final iconPx = r * 1.08;
       final scale = iconPx / math.max(info.size.width, info.size.height);
       final scaledW = info.size.width * scale;
       final scaledH = info.size.height * scale;
@@ -635,6 +636,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   Timer? _updateTimer;
   Timer? _cycleTimer;
+  Timer? _autoThemeTimer;
   List<PinModel> _currentPins = [];
   Cancelable? _tapSubscription;
 
@@ -692,6 +694,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   void dispose() {
     _updateTimer?.cancel();
     _cycleTimer?.cancel();
+    _autoThemeTimer?.cancel();
     _meetingPosTimer?.cancel();
     _tapSubscription?.cancel();
     _recapGpsSub?.cancel();
@@ -711,6 +714,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     if (_mapboxMap == null) return;
     final meetingState = ref.read(meetingProvider);
     if (!meetingState.isApproaching) return;
+    if (meetingState.activeMeeting?.id.startsWith('demo_') == true) return;
 
     final myLat = meetingState.myLat;
     final myLng = meetingState.myLng;
@@ -1626,18 +1630,40 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   // ─── 지도 스타일 변경 ──────────────────────────────────────────────────────
 
+  // 시간 기반 자동 스타일 결정: 07:00~18:59 → standard, 19:00~06:59 → dark
+  MapStyleOption _resolveAutoStyle() {
+    final h = DateTime.now().hour;
+    return (h >= 7 && h < 19) ? MapStyleOption.standard : MapStyleOption.dark;
+  }
+
+  void _startAutoThemeTimer() {
+    _autoThemeTimer?.cancel();
+    // 1분마다 시간 체크 — 시간 경계(07시·19시) 통과 시 스타일 갱신
+    _autoThemeTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      final resolved = _resolveAutoStyle();
+      final current = ref.read(mapStyleProvider);
+      if (current == MapStyleOption.auto) {
+        _applyMapStyle(resolved);
+        setState(() {});
+      }
+    });
+  }
+
   Future<void> _applyMapStyle(MapStyleOption style) async {
     if (_mapboxMap == null) return;
-    final uri = switch (style) {
+    final effective = style == MapStyleOption.auto ? _resolveAutoStyle() : style;
+    final uri = switch (effective) {
       MapStyleOption.standard => MapboxStyles.STANDARD,
       MapStyleOption.satellite => MapboxStyles.SATELLITE_STREETS,
       MapStyleOption.outdoors => MapboxStyles.OUTDOORS,
       MapStyleOption.dark => MapboxStyles.DARK,
       MapStyleOption.light => 'mapbox://styles/mapbox/light-v11',
       MapStyleOption.streets => 'mapbox://styles/mapbox/streets-v12',
+      MapStyleOption.auto => MapboxStyles.STANDARD, // unreachable
     };
     await _mapboxMap!.style.setStyleURI(uri);
-    if (style == MapStyleOption.standard) {
+    if (effective == MapStyleOption.standard) {
       await _mapboxMap!.style.setProjection(
         StyleProjection(name: StyleProjectionName.globe),
       );
@@ -1678,6 +1704,19 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
   }
 
+  void _showMeetingCreateSheet(BuildContext ctx) {
+    showAppSheet<void>(
+      ctx,
+      builder: (_) => const MeetingCreateSheet(),
+    );
+  }
+
+  void _showFriendsScreen(BuildContext ctx) {
+    Navigator.of(ctx).push(
+      MaterialPageRoute<void>(builder: (_) => const FriendsScreen()),
+    );
+  }
+
   void _showLayerSheet(BuildContext ctx, WidgetRef ref) {
     showAppSheet<void>(
       ctx,
@@ -1689,6 +1728,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         },
       ),
     );
+  }
+
+  // ─── 한국어 레이블 적용 ────────────────────────────────────────────────────
+
+  Future<void> _applyKoreanLabels([MapboxMap? map]) async {
+    final m = map ?? _mapboxMap;
+    if (m == null) return;
+    // Classic 스타일(outdoors, streets-v12)용 — text-field 직접 교체
+    // Standard 스타일은 main.dart의 MapboxMapsOptions.setLanguage('ko') 전역 설정으로 처리됨
+    try {
+      await m.style.localizeLabels('ko', null);
+    } catch (_) {}
   }
 
   // ─── 지도 생성 콜백 ───────────────────────────────────────────────────────
@@ -1728,6 +1779,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     await mapboxMap.setBounds(
       CameraBoundsOptions(maxPitch: 80),
     );
+
+    // 초기 스타일 로드 후 한국어 레이블 적용 (mapboxMap 직접 전달 — null 방지)
+    await _applyKoreanLabels(mapboxMap);
 
     _polylineManager = await mapboxMap.annotations
         .createPolylineAnnotationManager();
@@ -1845,7 +1899,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     });
 
     ref.listen(mapStyleProvider, (prev, next) {
-      if (prev != next) _applyMapStyle(next);
+      if (prev == next) return;
+      _applyMapStyle(next);
+      if (next == MapStyleOption.auto) {
+        _startAutoThemeTimer();
+      } else {
+        _autoThemeTimer?.cancel();
+      }
     });
 
     ref.listen(themePresetProvider, (prev, next) {
@@ -1867,6 +1927,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     // 약속 위치 업데이트 → 화면 좌표 재계산
     ref.listen(meetingProvider, (prev, next) {
       if (next.isApproaching &&
+          next.activeMeeting?.id.startsWith('demo_') != true &&
           (prev?.myLat != next.myLat ||
               prev?.friendLat != next.friendLat ||
               prev?.friendLng != next.friendLng)) {
@@ -1875,19 +1936,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     });
 
     final currentStyle = ref.watch(mapStyleProvider);
-    final styleUri = switch (currentStyle) {
+    final effectiveStyle = currentStyle == MapStyleOption.auto
+        ? _resolveAutoStyle()
+        : currentStyle;
+    final styleUri = switch (effectiveStyle) {
       MapStyleOption.standard => MapboxStyles.STANDARD,
       MapStyleOption.satellite => MapboxStyles.SATELLITE_STREETS,
       MapStyleOption.outdoors => MapboxStyles.OUTDOORS,
       MapStyleOption.dark => MapboxStyles.DARK,
       MapStyleOption.light => 'mapbox://styles/mapbox/light-v11',
       MapStyleOption.streets => 'mapbox://styles/mapbox/streets-v12',
+      MapStyleOption.auto => MapboxStyles.STANDARD, // unreachable
     };
 
     final bool controlsVisible = _mapInitialized && !_isGlobeMode && !_isGlobeTransitioning;
 
+    final isDarkStatusBar = _isGlobeMode ||
+        _isGlobeTransitioning ||
+        effectiveStyle == MapStyleOption.dark ||
+        effectiveStyle == MapStyleOption.satellite;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: (_isGlobeMode || _isGlobeTransitioning)
+      value: isDarkStatusBar
           ? SystemUiOverlayStyle.light
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
@@ -1903,6 +1973,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 pitch: 0,
                 bearing: 0,
               ),
+              onStyleLoadedListener: (_) => _applyKoreanLabels(_mapboxMap),
               onMapCreated: _onMapCreated,
               onCameraChangeListener: (data) {
                 if (!_mapInitialized) return;
@@ -1912,7 +1983,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 _cameraCenterLng = center.lng.toDouble();
 
                 // 약속 화면 좌표 재계산 (카메라 이동 시 마커 위치 동기화)
-                if (ref.read(meetingProvider).isApproaching) {
+                final _ms = ref.read(meetingProvider);
+                if (_ms.isApproaching &&
+                    _ms.activeMeeting?.id.startsWith('demo_') != true) {
                   _scheduleMeetingPositionUpdate();
                 }
 
@@ -1970,6 +2043,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   onLayerTap: () => _showLayerSheet(context, ref),
                   onFilterTap: () => _showFilterModal(context),
                   onPolylineTap: _onPolylineTap,
+                  onMeetingTap: () => _showMeetingCreateSheet(context),
+                  onFriendsTap: () => _showFriendsScreen(context),
                   routeActive: _routeMode,
                   isExpanded: _controlsExpanded,
                   onToggle: () =>
@@ -2058,7 +2133,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             // ── 약속 — 고무줄 선 + 아바타 마커 오버레이 ─────────────────
             Builder(builder: (ctx) {
               final ms = ref.watch(meetingProvider);
-              if (!ms.isApproaching || ms.activeMeeting == null) {
+              if (!ms.isApproaching ||
+                  ms.activeMeeting == null ||
+                  ms.activeMeeting!.id.startsWith('demo_')) {
                 return const SizedBox.shrink();
               }
               return Stack(
@@ -2069,6 +2146,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       friendScreenPos: _meetingFriendScreenPos,
                       meeting: ms.activeMeeting!,
                       distanceMeters: ms.distanceMeters,
+                      etaSeconds: ms.etaSeconds,
                     ),
                   ),
                   Positioned(
@@ -2130,6 +2208,8 @@ class _MapControls extends StatelessWidget {
   final VoidCallback onFilterTap;
   final VoidCallback onPolylineTap;
   final VoidCallback onToggle;
+  final VoidCallback onMeetingTap;
+  final VoidCallback onFriendsTap;
   final bool routeActive;
   final bool isExpanded;
 
@@ -2139,6 +2219,8 @@ class _MapControls extends StatelessWidget {
     required this.onFilterTap,
     required this.onPolylineTap,
     required this.onToggle,
+    required this.onMeetingTap,
+    required this.onFriendsTap,
     this.routeActive = false,
     this.isExpanded = true,
   });
@@ -2256,6 +2338,24 @@ class _MapControls extends StatelessWidget {
                           GlassButton(
                             icon: Icons.layers_outlined,
                             onTap: onLayerTap,
+                            size: 44,
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            width: 44,
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.12),
+                          ),
+                          const SizedBox(height: 10),
+                          GlassButton(
+                            icon: Icons.event_rounded,
+                            onTap: onMeetingTap,
+                            size: 44,
+                          ),
+                          const SizedBox(height: 10),
+                          GlassButton(
+                            icon: Icons.people_rounded,
+                            onTap: onFriendsTap,
                             size: 44,
                           ),
                         ],
@@ -2904,6 +3004,7 @@ class _LayerSheet extends StatelessWidget {
   const _LayerSheet({required this.current, required this.onSelect});
 
   static const _options = [
+    (MapStyleOption.auto,     '자동',    '시간 기반',   Color(0xFF8B6CF6), Color(0xFF1A1A2E)),
     (MapStyleOption.standard, '기본',    '표준 지도',   Color(0xFF2C3E2A), Color(0xFFEDE3CF)),
     (MapStyleOption.dark,     '다크',    '야간 모드',   Color(0xFFCBBFFF), Color(0xFF0D1220)),
     (MapStyleOption.satellite,'위성',    '항공 사진',   Color(0xFF90EFA0), Color(0xFF1D3D28)),
@@ -3094,6 +3195,8 @@ class _MapStylePainter extends CustomPainter {
         _paintLight(canvas, s);
       case MapStyleOption.streets:
         _paintStreets(canvas, s);
+      case MapStyleOption.auto:
+        _paintAuto(canvas, s);
     }
   }
 
@@ -3298,6 +3401,38 @@ class _MapStylePainter extends CustomPainter {
 
     canvas.drawCircle(Offset(s.width * 0.39, s.height * 0.41), 3.5,
         Paint()..color = const Color(0xFF4A90D9));
+  }
+
+  // 자동 테마 미리보기: 상단 절반 밝음(낮), 하단 절반 어두움(밤)
+  void _paintAuto(Canvas canvas, Size s) {
+    // 낮 (상단)
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, s.width, s.height / 2),
+      Paint()..color = const Color(0xFFEDE3CF),
+    );
+    // 밤 (하단)
+    canvas.drawRect(
+      Rect.fromLTWH(0, s.height / 2, s.width, s.height / 2),
+      Paint()..color = const Color(0xFF0D1220),
+    );
+    // 구분선
+    canvas.drawLine(
+      Offset(0, s.height / 2),
+      Offset(s.width, s.height / 2),
+      Paint()..color = const Color(0xFF8B6CF6)..strokeWidth = 1.5,
+    );
+    // 태양 아이콘 (낮)
+    canvas.drawCircle(
+      Offset(s.width / 2, s.height * 0.28),
+      s.width * 0.14,
+      Paint()..color = const Color(0xFFFAB04A),
+    );
+    // 달 아이콘 (밤)
+    canvas.drawCircle(
+      Offset(s.width / 2, s.height * 0.72),
+      s.width * 0.11,
+      Paint()..color = const Color(0xFFCBBFFF),
+    );
   }
 
   @override

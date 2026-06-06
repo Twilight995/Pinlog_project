@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../widgets/common/color_picker_sheet.dart';
 import '../wizard_scaffold.dart';
 import '../wizard_state.dart';
 import '../wizard_style.dart';
@@ -183,15 +184,23 @@ const _outerPresets = <Color?>[
 ];
 
 const _innerPresets = <Color?>[
-  null,               // 자동 유도
+  null,               // 자동 (외부 색 기반 다크)
   Color(0xFF0A0A0A),  // 블랙
+  Color(0xFF1C1C1E),  // 차콜
   Color(0xFF0A1628),  // 다크 네이비
   Color(0xFF0F2D1F),  // 다크 그린
   Color(0xFF1A0A28),  // 다크 퍼플
   Color(0xFF280A10),  // 다크 레드
-  Color(0xFF0A1E28),  // 다크 틸
-  Color(0xFF1C1C1E),  // 다크 그레이
-  Color(0xFF2C2C2E),  // 차콜
+  Color(0xFFBF2626),  // 레드
+  Color(0xFFBF6000),  // 오렌지
+  Color(0xFF1A7A3C),  // 그린
+  Color(0xFF0055BF),  // 블루
+  Color(0xFF5B21B6),  // 퍼플
+  Color(0xFFBF1A5F),  // 핑크
+  Color(0xFF0D7377),  // 틸
+  Color(0xFFD4A017),  // 골드
+  Color(0xFF6B3A2A),  // 브라운
+  Color(0xFF5C5C6E),  // 슬레이트
   Color(0xFFE5E5EA),  // 라이트 그레이
   Color(0xFFFFFFFF),  // 화이트
 ];
@@ -392,52 +401,92 @@ class _ColorSwatchRow extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
-        children: presets.map((c) {
-          final argb = c?.toARGB32();
-          final isSelected = selectedArgb == argb;
-          final displayColor = c ?? themeColor;
+        children: [
+          ...presets.map((c) {
+            final argb = c?.toARGB32();
+            final isSelected = selectedArgb == argb;
+            final displayColor = c ?? themeColor;
 
-          return GestureDetector(
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                onSelect(c);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.only(right: 8),
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: displayColor,
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.white.withValues(alpha: 0.9)
+                        : Colors.white.withValues(alpha: 0.10),
+                    width: isSelected ? 2 : 1,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: displayColor.withValues(alpha: 0.5),
+                            blurRadius: 5,
+                          )
+                        ]
+                      : null,
+                ),
+                child: c == null
+                    ? Center(
+                        child: Icon(
+                          Icons.auto_awesome_rounded,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      )
+                    : null,
+              ),
+            );
+          }),
+          GestureDetector(
             onTap: () {
               HapticFeedback.selectionClick();
-              onSelect(c);
+              showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => AppColorPickerSheet(
+                  initial: selectedArgb != null ? Color(selectedArgb!) : null,
+                  onPick: (c) => onSelect(c),
+                ),
+              );
             },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              margin: const EdgeInsets.only(right: 8),
+            child: Container(
               width: 32,
               height: 32,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: displayColor,
-                border: Border.all(
-                  color: isSelected
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.15),
-                  width: isSelected ? 3 : 1.5,
+                gradient: const SweepGradient(
+                  colors: [
+                    Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
+                    Color(0xFF00FFFF), Color(0xFF0000FF), Color(0xFFFF00FF),
+                    Color(0xFFFF0000),
+                  ],
                 ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: displayColor.withValues(alpha: 0.6),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        )
-                      ]
-                    : null,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.25),
+                  width: 1,
+                ),
               ),
-              child: c == null
-                  ? Center(
-                      child: Icon(
-                        Icons.auto_awesome_rounded,
-                        size: 14,
-                        color: Colors.white.withValues(alpha: 0.9),
-                      ),
-                    )
-                  : null,
+              child: Center(
+                child: Icon(
+                  Icons.add,
+                  size: 14,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ),
             ),
-          );
-        }).toList(),
+          ),
+        ],
       ),
     );
   }

@@ -8,6 +8,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../application/providers/auth_provider.dart';
 import '../../../application/providers/friends_provider.dart';
 import '../../../application/providers/pin_provider.dart';
@@ -26,10 +27,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../legal/terms_screen.dart';
 import '../../../application/providers/nav_provider.dart';
-import '../social/friends_screen.dart';
 import '../social/shared_map_screen.dart';
+import '../social/mock_social_preview.dart';
 import '../../widgets/map/pin_detail_sheet.dart';
-import '../../widgets/meeting/meeting_create_sheet.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Screen
@@ -227,10 +227,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ),
 
-                // ── 설정 ──────────────────────────────────────────────────────
+                // ── 계정 정보 ──────────────────────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+                    child: _AccountSection(
+                      onChangePassword: () => _showChangePasswordDialog(context),
+                    ),
+                  ),
+                ),
+
+                // ── 설정 ──────────────────────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                     child: _SettingsSection(
                       notifEnabled: _notifEnabled,
                       onNotifChanged: (v) async {
@@ -258,7 +268,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             );
                             return;
                           }
-                          await backupService.exportPins(pins);
+                          final sz = MediaQuery.sizeOf(context);
+                          await backupService.exportPins(
+                            pins,
+                            sharePositionOrigin: Rect.fromLTWH(
+                              0, sz.height / 2, sz.width, 1),
+                          );
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -270,7 +285,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         }
                       },
                       onImportBackup: () => _showImportDialog(context),
-                      onCreateMeeting: () => _showMeetingCreate(context),
                       onSignOut: () => _showSignOutDialog(context),
                       onDeleteAccount: () => _showDeleteAccountDialog(context),
                     ),
@@ -351,17 +365,72 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _navigateToSignIn();
   }
 
-  Future<void> _showMeetingCreate(BuildContext ctx) async {
-    HapticFeedback.mediumImpact();
-    await showModalBottomSheet<bool>(
+  Future<void> _showChangePasswordDialog(BuildContext ctx) async {
+    final pwCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    String? errorMsg;
+
+    await showDialog<void>(
       context: ctx,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: const MeetingCreateSheet(),
+      builder: (dCtx) => StatefulBuilder(
+        builder: (dCtx, setS) => AlertDialog(
+          title: const Text('비밀번호 변경'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: pwCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '새 비밀번호 (8자 이상)'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '새 비밀번호 확인'),
+              ),
+              if (errorMsg != null) ...[
+                const SizedBox(height: 8),
+                Text(errorMsg!, style: const TextStyle(color: Color(0xFFFF3B30), fontSize: 13)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dCtx).pop(),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final pw = pwCtrl.text.trim();
+                final confirm = confirmCtrl.text.trim();
+                if (pw.length < 8) {
+                  setS(() => errorMsg = '비밀번호는 8자 이상이어야 합니다.');
+                  return;
+                }
+                if (pw != confirm) {
+                  setS(() => errorMsg = '비밀번호가 일치하지 않습니다.');
+                  return;
+                }
+                final err = await ref.read(pinlogAuthProvider.notifier).changePassword(pw);
+                if (!dCtx.mounted) return;
+                if (err != null) {
+                  setS(() => errorMsg = err);
+                } else {
+                  Navigator.of(dCtx).pop();
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('비밀번호가 변경되었습니다.')),
+                  );
+                }
+              },
+              child: const Text('변경'),
+            ),
+          ],
+        ),
       ),
     );
+    pwCtrl.dispose();
+    confirmCtrl.dispose();
   }
 
   Future<void> _showImportDialog(BuildContext ctx) async {
@@ -2146,7 +2215,6 @@ class _SettingsSection extends StatelessWidget {
   final bool isExporting;
   final VoidCallback onExportBackup;
   final VoidCallback onImportBackup;
-  final VoidCallback onCreateMeeting;
   final VoidCallback onSignOut;
   final VoidCallback onDeleteAccount;
 
@@ -2158,7 +2226,6 @@ class _SettingsSection extends StatelessWidget {
     required this.isExporting,
     required this.onExportBackup,
     required this.onImportBackup,
-    required this.onCreateMeeting,
     required this.onSignOut,
     required this.onDeleteAccount,
   });
@@ -2199,24 +2266,6 @@ class _SettingsSection extends StatelessWidget {
                 subtitle: '핀을 Supabase에 자동 저장',
                 value: syncEnabled,
                 onChanged: onSyncChanged,
-              ),
-              _RowSeparator(),
-              _TapRow(
-                icon: Icons.event_outlined,
-                iconColor: themeColor,
-                label: '약속 잡기',
-                subtitle: '친구와 만날 시간·장소 조율',
-                onTap: onCreateMeeting,
-              ),
-              _RowSeparator(),
-              _TapRow(
-                icon: Icons.people_outline_rounded,
-                iconColor: themeColor,
-                label: '친구 관리',
-                subtitle: '친구 추가 및 코드 공유',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const FriendsScreen()),
-                ),
               ),
               _RowSeparator(),
               _TapRow(
@@ -2272,7 +2321,9 @@ class _SettingsSection extends StatelessWidget {
                   iconColor: mutedColor,
                   label: '앱 버전',
                   subtitle: 'v${snapshot.data?.version ?? '1.0.0'}',
-                  onTap: null,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MockSocialPreviewPage()),
+                  ),
                 ),
               ),
               _RowSeparator(),
@@ -2430,6 +2481,63 @@ class _RowSeparator extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 62),
       child: Container(height: 1, color: context.separatorColor),
+    );
+  }
+}
+
+// ── 계정 정보 섹션 ─────────────────────────────────────────────────────────────
+class _AccountSection extends StatelessWidget {
+  final VoidCallback onChangePassword;
+  const _AccountSection({required this.onChangePassword});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = Supabase.instance.client.auth.currentUser;
+    final email = user?.email;
+    final provider = user?.appMetadata['provider'] as String?;
+    final isEmailUser = provider == 'email';
+    final themeColor = context.primaryColor;
+    final mutedColor = context.labelColor.withValues(alpha: 0.38);
+
+    if (email == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('계정',
+            style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: context.labelColor, letterSpacing: -0.3)),
+        const SizedBox(height: 14),
+        Container(
+          decoration: BoxDecoration(
+            color: context.cardBg,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 3))],
+          ),
+          child: Column(
+            children: [
+              _TapRow(
+                icon: Icons.email_outlined,
+                iconColor: mutedColor,
+                label: '이메일',
+                subtitle: email,
+                onTap: null,
+                isLast: !isEmailUser,
+              ),
+              if (isEmailUser) ...[
+                _RowSeparator(),
+                _TapRow(
+                  icon: Icons.lock_outline_rounded,
+                  iconColor: themeColor,
+                  label: '비밀번호 변경',
+                  subtitle: '새 비밀번호로 변경',
+                  onTap: onChangePassword,
+                  isLast: true,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

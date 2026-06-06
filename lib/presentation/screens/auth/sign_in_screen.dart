@@ -88,9 +88,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
 
   void _handleKakao() async {
     HapticFeedback.lightImpact();
-    await ref
-        .read(pinlogAuthProvider.notifier)
-        .signInWithOAuth(OAuthProvider.kakao);
+    await ref.read(pinlogAuthProvider.notifier).signInWithKakao();
   }
 
   void _handleSocialLogin() {

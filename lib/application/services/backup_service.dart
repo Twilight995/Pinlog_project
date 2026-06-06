@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,7 +11,7 @@ import '../../data/models/pin_model.dart';
 class BackupService {
   // ── Export ─────────────────────────────────────────────────────────────────
 
-  Future<void> exportPins(List<PinModel> pins) async {
+  Future<void> exportPins(List<PinModel> pins, {Rect? sharePositionOrigin}) async {
     final payload = {
       'version': 1,
       'exportedAt': DateTime.now().toIso8601String(),
@@ -26,6 +27,7 @@ class BackupService {
     await Share.shareXFiles(
       [XFile(file.path, mimeType: 'application/json')],
       subject: 'Pinlog 백업 파일',
+      sharePositionOrigin: sharePositionOrigin,
     );
   }
 

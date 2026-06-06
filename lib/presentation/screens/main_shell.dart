@@ -3,8 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../application/providers/nav_provider.dart';
 import '../../application/providers/pin_provider.dart';
+import '../../application/services/notification_service.dart';
 import '../../application/services/recap_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../widgets/recap/recap_popup.dart';
@@ -24,10 +27,25 @@ class _MainShellState extends ConsumerState<MainShell> {
   // 스플래시 오버레이 뒤에서 로딩되므로 크롬은 처음부터 visible
   final bool _chromeVisible = true;
 
+  late final _authSub = Supabase.instance.client.auth.onAuthStateChange
+      .listen(_onAuthStateChange);
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkRecap());
+  }
+
+  @override
+  void dispose() {
+    _authSub.cancel();
+    super.dispose();
+  }
+
+  void _onAuthStateChange(AuthState state) {
+    if (state.event == AuthChangeEvent.signedIn) {
+      ref.read(pinsProvider.notifier).loadFromServer();
+    }
   }
 
   Future<void> _checkRecap() async {
@@ -38,6 +56,12 @@ class _MainShellState extends ConsumerState<MainShell> {
     if (memories.isEmpty) return;
     if (!mounted) return;
     svc.markTodayShown();
+    final first = memories.first;
+    await NotificationService.instance.showRecapNotification(
+      pinTitle: first.pin.title,
+      yearsAgo: first.yearsAgo,
+    );
+    if (!mounted) return;
     await RecapPopup.show(context, memories);
   }
 
@@ -92,20 +116,18 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
   late final AnimationController _ctrl;
   int _curr = 0;
   int _prev = 0;
-  int _dir = 1;
 
   // tab 0(MapScreen/PlatformView)에 GlobalKey 부여.
   // Stack 내 위치가 바뀌어도 Flutter가 element를 이동(move)하므로
   // 언마운트/리마운트 없이 onMapCreated 중복 호출을 방지.
   final _mapKey = GlobalKey();
 
-  // 들어오는 탭: 슬라이드 + 스케일
-  static final _inSlide = CurveTween(curve: Curves.easeOutCubic);
+  // 들어오는 탭: 페이드 + 미세 스케일 (슬라이드 없음 — 탭 전환은 방향감이 불필요)
+  static final _inFade  = CurveTween(curve: Curves.easeOut);
   static final _inScale = CurveTween(curve: Curves.easeOutCubic);
 
-  // 나가는 탭: 빠르게 사라짐 (겹침 최소화)
-  static final _outSlide = CurveTween(curve: Curves.easeInCubic);
-  static final _outFade  = CurveTween(curve: const Interval(0.0, 0.38, curve: Curves.easeIn));
+  // 나가는 탭: 빠르게 cover
+  static final _outFade = CurveTween(curve: const Interval(0.0, 0.4, curve: Curves.easeIn));
 
   @override
   void initState() {
@@ -114,7 +136,7 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
     _prev = widget.activeTab;
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 200),
     )..value = 1.0;
   }
 
@@ -124,7 +146,6 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
     if (old.activeTab != widget.activeTab) {
       _prev = old.activeTab;
       _curr = widget.activeTab;
-      _dir = _curr > _prev ? 1 : -1;
       _ctrl.forward(from: 0.0);
     }
   }
@@ -163,32 +184,29 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
 
   Widget _buildSlot(
     int i,
-    double tSlideIn,
+    double tFadeIn,
     double tScaleIn,
-    double tSlideOut,
-    double tFadeOut,
-    double w,
+    double tCoverOut,
   ) {
-    // 활성 탭: 슬라이드 + 스케일 (dark cover 없음 — 첫 프레임 검정 방지)
     if (i == _curr) {
-      return Transform.translate(
-        offset: Offset(w * _dir * 0.15 * (1.0 - tSlideIn), 0),
-        child: Transform.scale(
-          scale: 0.94 + 0.06 * tScaleIn,
+      // MapScreen(PlatformView): Opacity 무시 → 즉시 표시 (cover 기반 reveal)
+      if (i == 0) {
+        final revealCover = (1.0 - tFadeIn).clamp(0.0, 1.0);
+        return _withCover(_child(i), revealCover);
+      }
+      // 일반 Flutter 탭: 페이드인 + 미세 스케일 (슬라이드 없음)
+      return Transform.scale(
+        scale: 0.97 + 0.03 * tScaleIn,
+        child: Opacity(
+          opacity: tFadeIn.clamp(0.0, 1.0),
           child: _child(i),
         ),
       );
     }
-    // 나가는 탭: 빠르게 cover + 미세 밀림
+    // 나가는 탭: 빠르게 cover (PlatformView 호환)
     if (i == _prev && _prev != _curr) {
       return IgnorePointer(
-        child: Transform.translate(
-          offset: Offset(-w * _dir * 0.08 * tSlideOut, 0),
-          child: Transform.scale(
-            scale: 1.0 - 0.03 * tSlideOut,
-            child: _withCover(_child(i), tFadeOut.clamp(0.0, 1.0)),
-          ),
-        ),
+        child: _withCover(_child(i), tCoverOut.clamp(0.0, 1.0)),
       );
     }
     // 비활성: PlatformView(map)는 cover, 나머지는 Offstage
@@ -203,12 +221,10 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (ctx, _) {
-        final raw    = _ctrl.value;
-        final tSlideIn  = _inSlide.transform(raw);
+        final raw      = _ctrl.value;
+        final tFadeIn   = _inFade.transform(raw);
         final tScaleIn  = _inScale.transform(raw);
-        final tSlideOut = _outSlide.transform(raw);
-        final tFadeOut  = _outFade.transform(raw);
-        final w = MediaQuery.sizeOf(ctx).width;
+        final tCoverOut = _outFade.transform(raw);
 
         // _curr를 항상 마지막(최상위 z)에 배치
         // GlobalKey 덕에 MapScreen이 다른 위치로 이동해도 리마운트 없음
@@ -223,7 +239,7 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
           children: [
             const ColoredBox(color: Color(0xFF050B1A)),
             for (final i in indices)
-              _buildSlot(i, tSlideIn, tScaleIn, tSlideOut, tFadeOut, w),
+              _buildSlot(i, tFadeIn, tScaleIn, tCoverOut),
           ],
         );
       },
@@ -417,7 +433,7 @@ class _NavItemState extends State<_NavItem>
             children: [
               // 슬라이딩 pill 배경 + 아이콘
               AnimatedContainer(
-                duration: const Duration(milliseconds: 380),
+                duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOutCubic,
                 width: widget.isActive ? 46 : 30,
                 height: 28,
@@ -438,7 +454,7 @@ class _NavItemState extends State<_NavItem>
                 ),
                 child: Center(
                   child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
+                    duration: const Duration(milliseconds: 160),
                     switchInCurve: Curves.easeOutBack,
                     switchOutCurve: Curves.easeIn,
                     transitionBuilder: (child, anim) => ScaleTransition(
@@ -458,7 +474,7 @@ class _NavItemState extends State<_NavItem>
               ),
               const SizedBox(height: 3),
               AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 250),
+                duration: const Duration(milliseconds: 180),
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: widget.isActive

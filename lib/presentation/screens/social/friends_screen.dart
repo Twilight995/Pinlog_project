@@ -118,6 +118,9 @@ class FriendsScreen extends ConsumerWidget {
                     ),
                   ),
                   const Spacer(),
+                  // 데모 친구 토글 버튼
+                  _DemoFriendsButton(friends: friends),
+                  const SizedBox(width: 8),
                   GestureDetector(
                     onTap: () => _showAddFriendSheet(context, ref),
                     child: Container(
@@ -408,6 +411,57 @@ class _EmptyFriends extends StatelessWidget {
   }
 }
 
+// ─── 데모 아바타 헬퍼 ─────────────────────────────────────────────────────────
+
+Widget _buildFriendAvatar(Friend friend, Color intimacyColor, {double size = 44}) {
+  final isDemo = friend.supabaseUid?.startsWith('demo_') == true;
+  if (!isDemo) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: intimacyColor.withValues(alpha: 0.15),
+        shape: BoxShape.circle,
+        border: Border.all(color: intimacyColor.withValues(alpha: 0.55), width: 1.8),
+      ),
+      child: Center(
+        child: Text(
+          friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
+          style: TextStyle(
+            fontSize: size * 0.4,
+            fontWeight: FontWeight.w800,
+            color: intimacyColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 데모 친구: 그라데이션 아이콘 아바타
+  final grad = friend.code == 'DEMO01'
+      ? [const Color(0xFFFFB347), const Color(0xFFFDCB6E)] // 지후: 따뜻한 오렌지-노랑
+      : [const Color(0xFF0CEBEB), const Color(0xFF20E3B2)]; // 서연: 민트-청록
+
+  return Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: grad,
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      shape: BoxShape.circle,
+      border: Border.all(color: intimacyColor.withValues(alpha: 0.6), width: 1.8),
+    ),
+    child: Icon(
+      Icons.person_rounded,
+      size: size * 0.56,
+      color: Colors.white,
+    ),
+  );
+}
+
 // ─── 친밀도 색상 ──────────────────────────────────────────────────────────────
 
 Color _intimacyColor(int level) {
@@ -451,26 +505,8 @@ class _FriendCard extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // 아바타 (친밀도 색상 테두리)
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.55), width: 1.8),
-            ),
-            child: Center(
-              child: Text(
-                friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                ),
-              ),
-            ),
-          ),
+          // 아바타
+          _buildFriendAvatar(friend, color),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -544,24 +580,7 @@ class _FriendCard extends ConsumerWidget {
             // 헤더
             Row(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: _intimacyColor(friend.intimacyLevel).withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: _intimacyColor(friend.intimacyLevel),
-                      ),
-                    ),
-                  ),
-                ),
+                _buildFriendAvatar(friend, _intimacyColor(friend.intimacyLevel), size: 40),
                 const SizedBox(width: 12),
                 Text(
                   friend.name,
@@ -977,6 +996,66 @@ class _AddFriendSheetState extends ConsumerState<_AddFriendSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── 데모 친구 토글 버튼 ──────────────────────────────────────────────────────
+
+class _DemoFriendsButton extends ConsumerWidget {
+  final List<Friend> friends;
+  const _DemoFriendsButton({required this.friends});
+
+  bool get _hasDemoFriends =>
+      friends.any((f) => f.supabaseUid?.startsWith('demo_') == true);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = _hasDemoFriends;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        if (active) {
+          ref.read(friendsProvider.notifier).clearDemoFriends();
+        } else {
+          ref.read(friendsProvider.notifier).addDemoFriends();
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: active
+              ? const Color(0xFF10B981).withValues(alpha: 0.14)
+              : context.cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: active
+                ? const Color(0xFF10B981).withValues(alpha: 0.55)
+                : context.glassBorder,
+            width: active ? 1.5 : 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              active ? Icons.group_rounded : Icons.group_add_outlined,
+              size: 13,
+              color: active ? const Color(0xFF10B981) : context.subLabelColor,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              active ? '데모 ON' : '데모',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: active ? const Color(0xFF10B981) : context.subLabelColor,
+                fontFamily: AppTokens.fontBody,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -673,23 +673,52 @@ class _ActivityHeatmap extends StatefulWidget {
 
 class _ActivityHeatmapState extends State<_ActivityHeatmap> {
   bool _expanded = true;
+  late DateTime _focusedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _focusedMonth = DateTime(now.year, now.month);
+  }
+
+  void _prevMonth() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
+    });
+  }
+
+  void _nextMonth() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-    final firstWeekday = DateTime(now.year, now.month, 1).weekday; // 1=월
+    final today = DateTime(now.year, now.month, now.day);
+    final isCurrentMonth =
+        _focusedMonth.year == now.year && _focusedMonth.month == now.month;
+
+    final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
+    final firstWeekday = DateTime(_focusedMonth.year, _focusedMonth.month, 1).weekday; // 1=월
 
     final dayCount = <int, int>{};
     for (final pin in widget.pins) {
-      if (pin.createdAt.year == now.year && pin.createdAt.month == now.month) {
+      if (pin.createdAt.year == _focusedMonth.year &&
+          pin.createdAt.month == _focusedMonth.month) {
         dayCount[pin.createdAt.day] = (dayCount[pin.createdAt.day] ?? 0) + 1;
       }
     }
 
     final totalPinsThisMonth = dayCount.values.fold(0, (sum, v) => sum + v);
     final rows = ((firstWeekday - 1 + daysInMonth) / 7).ceil();
-    final currentWeekRow = ((firstWeekday - 1 + now.day - 1) ~/ 7);
+    final currentWeekRow = isCurrentMonth
+        ? ((firstWeekday - 1 + now.day - 1) ~/ 7)
+        : 0;
     final rowsToShow = _expanded
         ? List.generate(rows, (i) => i)
         : [currentWeekRow];
@@ -703,7 +732,10 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
             final day = cellIdx - (firstWeekday - 1) + 1;
             final valid = day >= 1 && day <= daysInMonth;
             final count = valid ? (dayCount[day] ?? 0) : 0;
-            final isToday = valid && day == now.day;
+            final cellDate = valid
+                ? DateTime(_focusedMonth.year, _focusedMonth.month, day)
+                : null;
+            final isToday = cellDate == today;
 
             Color cellColor;
             Color textColor;
@@ -784,23 +816,63 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
           // 헤더
           Row(
             children: [
-              Text(
-                '${now.year}년 ${now.month}월',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: context.labelColor,
-                  fontFamily: AppTokens.fontDisplay,
+              // 이전 달
+              GestureDetector(
+                onTap: _prevMonth,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    Icons.chevron_left_rounded,
+                    size: 20,
+                    color: context.subLabelColor,
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '$totalPinsThisMonth개 기록',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: context.subLabelColor,
-                  fontFamily: AppTokens.fontBody,
+              // 연/월 + 기록 수
+              GestureDetector(
+                onTap: isCurrentMonth
+                    ? null
+                    : () {
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          _focusedMonth = DateTime(now.year, now.month);
+                        });
+                      },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${_focusedMonth.year}년 ${_focusedMonth.month}월',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: context.labelColor,
+                        fontFamily: AppTokens.fontDisplay,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$totalPinsThisMonth개 기록',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: context.subLabelColor,
+                        fontFamily: AppTokens.fontBody,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 다음 달
+              GestureDetector(
+                onTap: _nextMonth,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: context.subLabelColor,
+                  ),
                 ),
               ),
               const Spacer(),

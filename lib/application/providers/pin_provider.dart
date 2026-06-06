@@ -1,6 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:uuid/uuid.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/models/pin_model.dart';
 import '../../data/repositories/pin_repository.dart';
@@ -20,6 +21,8 @@ class PinsNotifier extends StateNotifier<List<PinModel>> {
 
   PinsNotifier(this._repo) : super([]) {
     load();
+    // 로그인 상태면 Supabase에서 핀 다운로드 (서버가 primary)
+    _initFromServer();
     Future.microtask(_backfillCountryCodes);
   }
 
@@ -27,131 +30,25 @@ class PinsNotifier extends StateNotifier<List<PinModel>> {
     state = _repo.getAll();
   }
 
-  /// 데모용 시드 핀들을 일괄 추가. 디자인 검증 / 첫 실행 분위기 셋업에 사용.
-  ///
-  /// 12개 카테고리 중 5개에 핀을 심어 "수집한 핀 / 미수집 핀" 두 섹션이
-  /// 모두 보이도록 함.
-  Future<void> seedDemoPins() async {
-    if (state.isNotEmpty) return; // 이미 있으면 덮어쓰지 않음
-
-    final now = DateTime.now();
-    final uuid = const Uuid();
-
-    final seeds =
-        <
-          ({
-            String shape,
-            String title,
-            double lat,
-            double lng,
-            String emotion,
-            int intensity,
-            int daysAgo,
-          })
-        >[
-          (
-            shape: 'cafe',
-            title: '성수동 블루보틀',
-            lat: 37.5447,
-            lng: 127.0557,
-            emotion: '좋아요',
-            intensity: 5,
-            daysAgo: 0,
-          ),
-          (
-            shape: 'cafe',
-            title: '연남동 작은 카페',
-            lat: 37.5654,
-            lng: 126.9255,
-            emotion: '좋아요',
-            intensity: 4,
-            daysAgo: 7,
-          ),
-          (
-            shape: 'cafe',
-            title: '망원동 골목 카페',
-            lat: 37.5560,
-            lng: 126.9015,
-            emotion: '좋아요',
-            intensity: 3,
-            daysAgo: 14,
-          ),
-          (
-            shape: 'drinking',
-            title: '광장시장 육회골목',
-            lat: 37.5703,
-            lng: 126.9999,
-            emotion: '좋아요',
-            intensity: 5,
-            daysAgo: 1,
-          ),
-          (
-            shape: 'drinking',
-            title: '을지로 노포',
-            lat: 37.5667,
-            lng: 126.9919,
-            emotion: '좋아요',
-            intensity: 4,
-            daysAgo: 4,
-          ),
-          (
-            shape: 'shopping',
-            title: '성수 콘크리트',
-            lat: 37.5447,
-            lng: 127.0560,
-            emotion: '좋아요',
-            intensity: 4,
-            daysAgo: 2,
-          ),
-          (
-            shape: 'drive',
-            title: '강변북로 야경',
-            lat: 37.5443,
-            lng: 127.0001,
-            emotion: '좋아요',
-            intensity: 5,
-            daysAgo: 3,
-          ),
-          (
-            shape: 'running',
-            title: '서울숲 산책로',
-            lat: 37.5443,
-            lng: 127.0374,
-            emotion: '별로에요',
-            intensity: 2,
-            daysAgo: 5,
-          ),
-        ];
-
-    for (final s in seeds) {
-      final pin = PinModel(
-        id: uuid.v4(),
-        title: s.title,
-        description: '',
-        latitude: s.lat,
-        longitude: s.lng,
-        emotion: s.emotion,
-        weather: '맑음',
-        companions: const [],
-        intensityLevel: s.intensity,
-        pinShape: s.shape,
-        visibility: '🌐 전체 공개',
-        photoPaths: const [],
-        createdAt: now.subtract(Duration(days: s.daysAgo)),
-        countryCode: 'KR',
-      );
-      await _repo.save(pin);
+  /// Supabase에서 핀을 다운로드해 Hive에 저장 후 상태 갱신
+  Future<void> loadFromServer() async {
+    try {
+      final serverPins = await PinSyncService.instance.downloadAll();
+      await _repo.clearAll();
+      for (final pin in serverPins) {
+        await _repo.save(pin);
+      }
+      if (mounted) load();
+      debugPrint('[PinSync] loaded ${serverPins.length} pins from Supabase');
+    } catch (e) {
+      debugPrint('[PinSync] loadFromServer error: $e');
     }
-    load();
   }
 
-  /// 모든 핀을 비움 (디자인 테스트용).
-  Future<void> clearAll() async {
-    final all = _repo.getAll();
-    for (final p in all) {
-      await _repo.delete(p.id);
-    }
-    load();
+  Future<void> _initFromServer() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    await loadFromServer();
   }
 
   Future<void> add(PinModel pin) async {
@@ -205,13 +102,15 @@ final selectedPinIdProvider = StateProvider<String?>((ref) => null);
 class FilterState {
   final String emotion;
   final String visibility;
+  final String pinShape;
 
-  const FilterState({this.emotion = 'all', this.visibility = 'all'});
+  const FilterState({this.emotion = 'all', this.visibility = 'all', this.pinShape = 'all'});
 
-  FilterState copyWith({String? emotion, String? visibility}) {
+  FilterState copyWith({String? emotion, String? visibility, String? pinShape}) {
     return FilterState(
       emotion: emotion ?? this.emotion,
       visibility: visibility ?? this.visibility,
+      pinShape: pinShape ?? this.pinShape,
     );
   }
 }
@@ -226,8 +125,8 @@ class FilterNotifier extends StateNotifier<FilterState> {
   FilterNotifier() : super(const FilterState());
 
   void setEmotion(String emotion) => state = state.copyWith(emotion: emotion);
-  void setVisibility(String visibility) =>
-      state = state.copyWith(visibility: visibility);
+  void setVisibility(String visibility) => state = state.copyWith(visibility: visibility);
+  void setPinShape(String pinShape) => state = state.copyWith(pinShape: pinShape);
   void reset() => state = const FilterState();
 }
 
@@ -235,7 +134,7 @@ class FilterNotifier extends StateNotifier<FilterState> {
 final triggerCreatePinProvider = StateProvider<bool>((ref) => false);
 
 // 지도 스타일
-enum MapStyleOption { standard, satellite, outdoors, dark, light, streets }
+enum MapStyleOption { auto, standard, satellite, outdoors, dark, light, streets }
 
 final mapStyleProvider = StateProvider<MapStyleOption>(
   (ref) => MapStyleOption.standard,
@@ -246,10 +145,9 @@ final filteredPinsProvider = Provider<List<PinModel>>((ref) {
   final filter = ref.watch(filterProvider);
 
   return pins.where((pin) {
-    final emotionMatch =
-        filter.emotion == 'all' || pin.emotion == filter.emotion;
-    final visibilityMatch =
-        filter.visibility == 'all' || pin.visibility == filter.visibility;
-    return emotionMatch && visibilityMatch;
+    final emotionMatch = filter.emotion == 'all' || pin.emotion == filter.emotion;
+    final visibilityMatch = filter.visibility == 'all' || pin.visibility == filter.visibility;
+    final shapeMatch = filter.pinShape == 'all' || pin.pinShape == filter.pinShape;
+    return emotionMatch && visibilityMatch && shapeMatch;
   }).toList();
 });

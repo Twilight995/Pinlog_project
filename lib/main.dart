@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'application/providers/theme_provider.dart';
 import 'application/services/fcm_service.dart';
+import 'application/services/notification_service.dart';
 import 'application/services/social_service.dart';
 import 'core/firebase_options.dart';
 import 'core/secrets.dart';
@@ -90,7 +92,13 @@ void main() async {
   // FCM 알림 초기화
   try { await FCMService.instance.init(); } catch (_) {}
 
-  // Mapbox SDK 초기화 — 토큰 설정
+  // 로컬 푸시 알림 초기화
+  try { await NotificationService.instance.init(); } catch (_) {}
+
+  // Kakao SDK 초기화
+  KakaoSdk.init(nativeAppKey: '36e9bdb04487ae3ee8fa088e2b627ee4');
+
+  // Mapbox SDK 초기화 — 토큰 + 전역 언어 설정
   if (_mapboxToken.isNotEmpty) {
     MapboxOptions.setAccessToken(_mapboxToken);
   } else {
@@ -99,6 +107,8 @@ void main() async {
       'flutter run --dart-define=MAPBOX_TOKEN=pk.xxxx 로 주입하세요.',
     );
   }
+  // 지도 레이블 언어를 한국어로 고정 (맵 인스턴스 생성 전에 설정해야 적용됨)
+  MapboxMapsOptions.setLanguage('ko');
 
   // 스플래시 오버레이 아래에 올바른 화면을 미리 준비하기 위해 앱 시작 전 auth 확인
   final session = Supabase.instance.client.auth.currentSession;
@@ -463,6 +473,7 @@ class _AppEntryState extends State<_AppEntry> {
                 }
               },
               child: SplashScreen(
+                isAuthenticated: widget.isAuthenticated,
                 onDone: () {
                   if (mounted) setState(() => _splashFading = true);
                 },

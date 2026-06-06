@@ -67,39 +67,85 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
   }
 
   Future<void> _submit() async {
+    final input = _locationCtrl.text.trim();
+
+    // ── 1. 기본 필드 검증 ─────────────────────────────────────────────
     if (_selectedFriendUid == null) {
-      _showError('친구를 선택해주세요');
+      _showDialog('친구를 선택해주세요', '약속을 잡을 친구를 먼저 선택해주세요.');
       return;
     }
-    if (_locationCtrl.text.trim().isEmpty) {
-      _showError('만날 장소를 입력해주세요');
+    if (input.isEmpty) {
+      _showDialog('장소를 입력해주세요', '만날 장소를 입력해주세요.');
       return;
     }
-    setState(() => _isLoading = true);
+
+    // ── 2. 장소명 형식 검증 (숫자만 / 의미없는 입력 차단) ─────────────
+    final hasLetter = input.contains(RegExp(r'[가-힣a-zA-Z]'));
+    if (!hasLetter) {
+      _showDialog(
+        '올바른 장소명을 입력해주세요',
+        '숫자만 입력하거나 의미없는 문자는 사용할 수 없어요.\n예) 강남역 2번 출구, 홍대입구역',
+      );
+      return;
+    }
+    if (input.length < 2) {
+      _showDialog('장소명이 너무 짧아요', '정확한 장소명을 2글자 이상 입력해주세요.');
+      return;
+    }
+
     HapticFeedback.mediumImpact();
 
+    // ── 3. 데모 친구 → Supabase 건너뛰고 즉시 주입 ───────────────────
+    if (_selectedFriendUid!.startsWith('demo_')) {
+      ref.read(meetingProvider.notifier).injectDemoMeeting();
+      if (mounted) Navigator.pop(context, true);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // ── 4. 지오코딩 (8초 타임아웃) ────────────────────────────────────
     double? targetLat;
     double? targetLng;
     try {
-      final locations = await locationFromAddress(_locationCtrl.text.trim());
+      final locations = await locationFromAddress(input)
+          .timeout(const Duration(seconds: 8));
       if (locations.isNotEmpty) {
         targetLat = locations.first.latitude;
         targetLng = locations.first.longitude;
       }
     } catch (_) {}
 
+    if (!mounted) return;
+
     if (targetLat == null || targetLng == null) {
-      if (!mounted) return;
       setState(() => _isLoading = false);
-      _showError('장소를 찾을 수 없어요. 다시 입력해주세요.');
+      _showDialog(
+        '장소를 찾을 수 없어요',
+        '"$input"에 해당하는 위치를 찾지 못했어요.\n더 정확한 주소나 장소명으로 다시 시도해주세요.',
+      );
       return;
     }
 
+    // ── 5. 한국 좌표 범위 검증 ─────────────────────────────────────────
+    const minLat = 33.0; const maxLat = 39.0;
+    const minLng = 124.0; const maxLng = 132.0;
+    if (targetLat < minLat || targetLat > maxLat ||
+        targetLng < minLng || targetLng > maxLng) {
+      setState(() => _isLoading = false);
+      _showDialog(
+        '국내 장소만 입력 가능해요',
+        '현재 한국 내 장소만 지원합니다.\n국내 지명으로 다시 입력해주세요.',
+      );
+      return;
+    }
+
+    // ── 6. 약속 생성 ──────────────────────────────────────────────────
     final success = await ref.read(meetingProvider.notifier).createMeeting(
           inviteeUid: _selectedFriendUid!,
           targetLat: targetLat,
           targetLng: targetLng,
-          targetName: _locationCtrl.text.trim(),
+          targetName: input,
           scheduledAt: _scheduledAt,
           transitMode: _transitMode,
         );
@@ -110,13 +156,45 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
       HapticFeedback.heavyImpact();
       Navigator.pop(context, true);
     } else {
-      _showError('약속 생성에 실패했습니다. 다시 시도해주세요.');
+      _showDialog('약속 생성 실패', '서버 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
     }
   }
 
-  void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red.shade700),
+  void _showDialog(String title, String message) {
+    HapticFeedback.lightImpact();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: context.labelColor,
+          ),
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            fontSize: 14,
+            color: context.subLabelColor,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              '확인',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: context.primaryColor,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -22,8 +22,14 @@ class SceneDelegate: FlutterSceneDelegate {
     openURLContexts URLContexts: Set<UIOpenURLContext>
   ) {
     for context in URLContexts {
-      AppLinks.shared.handleLink(url: context.url)
-      PinlogDeepLinkChannel.shared.send(url: context.url)
+      let url = context.url
+      // Kakao SDK callback URLs must reach the Flutter Kakao plugin via super,
+      // not our deep link channel — otherwise KakaoTalk login never completes.
+      if url.scheme?.hasPrefix("kakao") == true {
+        continue
+      }
+      AppLinks.shared.handleLink(url: url)
+      PinlogDeepLinkChannel.shared.send(url: url)
     }
     super.scene(scene, openURLContexts: URLContexts)
   }

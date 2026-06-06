@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/secrets.dart';
 import '../../data/models/meeting.dart';
 import '../../data/repositories/meeting_repository.dart';
+import '../../data/repositories/profile_repository.dart';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +29,9 @@ class MeetingState {
   /// Straight-line distance in metres
   final double? distanceMeters;
 
+  /// ETA from Mapbox Directions API (seconds). null = not yet fetched.
+  final int? etaSeconds;
+
   const MeetingState({
     this.activeMeeting,
     this.isLoading = false,
@@ -32,6 +40,7 @@ class MeetingState {
     this.friendLat,
     this.friendLng,
     this.distanceMeters,
+    this.etaSeconds,
   });
 
   bool get isApproaching =>
@@ -46,6 +55,8 @@ class MeetingState {
     double? friendLat,
     double? friendLng,
     double? distanceMeters,
+    int? etaSeconds,
+    bool clearEta = false,
     bool clearMeeting = false,
   }) =>
       MeetingState(
@@ -56,6 +67,7 @@ class MeetingState {
         friendLat: friendLat ?? this.friendLat,
         friendLng: friendLng ?? this.friendLng,
         distanceMeters: distanceMeters ?? this.distanceMeters,
+        etaSeconds: clearEta ? null : etaSeconds ?? this.etaSeconds,
       );
 }
 
@@ -66,6 +78,7 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
 
   StreamSubscription<Position>? _gpsSub;
   StreamSubscription<(double, double)>? _friendSub;
+  DateTime? _lastEtaFetch;
 
   MeetingNotifier(this._repo) : super(const MeetingState()) {
     _loadActiveMeeting();
@@ -77,6 +90,48 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
     _friendSub?.cancel();
     // _repo는 meetingRepositoryProvider의 ref.onDispose에서 처리됨 — 이중 호출 방지
     super.dispose();
+  }
+
+  // 30초 쓰로틀로 Mapbox Directions API 호출
+  Future<void> _refreshEta() async {
+    final now = DateTime.now();
+    if (_lastEtaFetch != null &&
+        now.difference(_lastEtaFetch!).inSeconds < 30) {
+      return;
+    }
+
+    final s = state;
+    final meeting = s.activeMeeting;
+    if (meeting == null) return;
+    if (s.myLat == null || s.myLng == null) return;
+
+    // 대중교통 → 거리 기반 fallback (API 미지원)
+    if (meeting.transitMode == TransitMode.transit) return;
+
+    final profile = meeting.transitMode == TransitMode.driving
+        ? 'driving-traffic'
+        : 'walking';
+
+    final toLat = s.friendLat ?? meeting.targetLat;
+    final toLng = s.friendLng ?? meeting.targetLng;
+
+    try {
+      _lastEtaFetch = now;
+      final uri = Uri.parse(
+        'https://api.mapbox.com/directions/v5/mapbox/$profile'
+        '/${s.myLng},${s.myLat};$toLng,$toLat'
+        '?access_token=${Secrets.mapboxPublicToken}'
+        '&overview=false'
+        '&geometries=geojson',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final routes = data['routes'] as List?;
+      if (routes == null || routes.isEmpty) return;
+      final seconds = (routes.first['duration'] as num).toInt();
+      if (mounted) state = state.copyWith(etaSeconds: seconds);
+    } catch (_) {}
   }
 
   Future<void> _loadActiveMeeting() async {
@@ -119,7 +174,25 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
       transitMode: transitMode,
     );
     state = state.copyWith(activeMeeting: meeting, isLoading: false);
+    if (meeting != null) _notifyInvitee(inviteeUid, targetName);
     return meeting != null;
+  }
+
+  void _notifyInvitee(String inviteeUid, String? placeName) {
+    final myNickname = ProfileRepository().getNickname();
+    final displayName = myNickname.isEmpty ? '친구' : myNickname;
+    final body = placeName != null && placeName.isNotEmpty
+        ? '$displayName님이 $placeName에서 만남을 요청했어요'
+        : '$displayName님이 만남을 요청했어요';
+    Supabase.instance.client.functions.invoke(
+      'send-fcm',
+      body: {
+        'target_uid': inviteeUid,
+        'title': '약속 요청이 왔어요',
+        'body': body,
+        'data': {'type': 'meeting'},
+      },
+    ).ignore();
   }
 
   /// Called when user taps "출발하기"
@@ -137,6 +210,35 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
     if (meeting == null) return;
     await _repo.updateTransitMode(meeting.id, mode);
     state = state.copyWith(activeMeeting: meeting.copyWith(transitMode: mode));
+  }
+
+  /// 데모용 약속 주입 — Supabase 없이 S4 화면 프리뷰
+  void injectDemoMeeting() {
+    state = MeetingState(
+      activeMeeting: Meeting(
+        id: 'demo_meeting_001',
+        meetUid: 'demo_me',
+        inviteeUid: 'demo_jihu_001',
+        targetLat: 37.5446,
+        targetLng: 127.0566,
+        targetName: '성수역 2번 출구',
+        scheduledAt: DateTime.now().add(const Duration(minutes: 18)),
+        transitMode: TransitMode.transit,
+        status: MeetingStatus.approaching,
+        friendNickname: '김지후',
+      ),
+      myLat: 37.5573,
+      myLng: 126.9245,
+      friendLat: 37.5756,
+      friendLng: 127.0480,
+      distanceMeters: 4800.0,
+    );
+  }
+
+  void clearDemoMeeting() {
+    if (state.activeMeeting?.id.startsWith('demo_') == true) {
+      state = const MeetingState();
+    }
   }
 
   Future<void> completeMeeting() async {
@@ -188,6 +290,7 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
     ).listen((pos) {
       _repo.broadcastLocation(pos.latitude, pos.longitude);
       state = state.copyWith(myLat: pos.latitude, myLng: pos.longitude);
+      _refreshEta();
     });
   }
 

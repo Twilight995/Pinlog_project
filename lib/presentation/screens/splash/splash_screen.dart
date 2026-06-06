@@ -11,7 +11,8 @@ import '../main_shell.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback? onDone;
-  const SplashScreen({super.key, this.onDone});
+  final bool isAuthenticated;
+  const SplashScreen({super.key, this.onDone, this.isAuthenticated = true});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -108,14 +109,20 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
-  // 지구본 줌인 → 마지막 위치로 날아가며 앱 크로스페이드 (플래시 없음)
+  // 지구본 → 앱 진입. 로그인 여부에 따라 두 가지 경로로 분기.
   Future<void> _navigateOut() async {
     if (_navigated || !mounted) return;
     _navigated = true;
 
     _rotationTimer?.cancel();
 
-    // 저장된 마지막 카메라 위치 로드 (없으면 한반도 중심 기본값)
+    // ── 비로그인: 지구본이 돌다가 그대로 fadeout → 로그인 화면 ──────────────
+    if (widget.onDone != null && !widget.isAuthenticated) {
+      widget.onDone!();
+      return;
+    }
+
+    // ── 로그인 상태: 저장된 위치로 flyTo → 지도로 자연스럽게 합체 ────────────
     final cam = await CameraPrefs.load();
     if (!mounted) return;
 
@@ -129,7 +136,6 @@ class _SplashScreenState extends State<SplashScreen>
       MapAnimationOptions(duration: 1000),
     );
 
-    // flyTo 완료(1000ms) 후 전환
     await Future.delayed(const Duration(milliseconds: 1000));
     if (!mounted) return;
 
@@ -145,8 +151,8 @@ class _SplashScreenState extends State<SplashScreen>
     // 레거시 단독 라우트 모드 (fallback)
     final session = Supabase.instance.client.auth.currentSession;
     final storedMode = Hive.box<dynamic>('settings').get('auth_mode') as String?;
-    final isAuthenticated = session != null || storedMode == 'demo';
-    final dest = isAuthenticated ? const MainShell() : const SignInScreen();
+    final isAuth = session != null || storedMode == 'demo';
+    final dest = isAuth ? const MainShell() : const SignInScreen();
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(

@@ -211,6 +211,7 @@ class _EmotionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ws = context.ws;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -226,12 +227,12 @@ class _EmotionCard extends StatelessWidget {
                   colors: gradient,
                 )
               : null,
-          color: selected ? null : AppOverlays.w06,
+          color: selected ? null : ws.surface,
           borderRadius: BorderRadius.circular(AppTokens.radiusCard),
           border: Border.all(
             color: selected
                 ? Colors.white.withValues(alpha: 0.35)
-                : AppOverlays.w12,
+                : ws.surfaceBorder,
             width: 1.2,
           ),
           boxShadow: selected
@@ -288,6 +289,7 @@ class _IntensityStar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ws = context.ws;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -302,12 +304,12 @@ class _IntensityStar extends StatelessWidget {
                   colors: gradient,
                 )
               : null,
-          color: filled ? null : AppOverlays.w06,
+          color: filled ? null : ws.surface,
           borderRadius: BorderRadius.circular(AppTokens.radiusButton),
           border: Border.all(
             color: filled
                 ? Colors.white.withValues(alpha: 0.30)
-                : AppOverlays.w12,
+                : ws.surfaceBorder,
             width: 1.2,
           ),
         ),

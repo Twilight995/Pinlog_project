@@ -8,11 +8,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../application/providers/pin_provider.dart';
 import '../../../data/models/pin_model.dart';
+import '../common/color_picker_sheet.dart';
 
 class PinCreateSheet extends ConsumerStatefulWidget {
   final LatLng location;
@@ -36,6 +38,9 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _companionCtrl;
   late String _selectedVisibility;
+  late String _selectedPinShape;
+  int? _selectedPinOuterColor;
+  int? _selectedPinInnerColor;
   late List<String> _companions;
   late List<String> _photoPaths;
   late DateTime _selectedDate;
@@ -55,6 +60,9 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
     _titleCtrl = TextEditingController(text: p?.title ?? '');
     _companionCtrl = TextEditingController();
     _selectedVisibility = p?.visibility ?? AppConstants.visibilities.first;
+    _selectedPinShape = p?.pinShape ?? AppConstants.pinShapes.first;
+    _selectedPinOuterColor = p?.pinOuterColor;
+    _selectedPinInnerColor = p?.pinInnerColor;
     _companions = List.from(p?.companions ?? []);
     _photoPaths = List.from(p?.photoPaths ?? []);
     _selectedDate = p?.createdAt ?? DateTime.now();
@@ -173,14 +181,14 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
       weather: widget.editPin?.weather ?? AppConstants.weathers.first,
       companions: List.from(_companions),
       intensityLevel: widget.editPin?.intensityLevel ?? 3,
-      pinShape: widget.editPin?.pinShape ?? AppConstants.pinShapes.first,
+      pinShape: _selectedPinShape,
       visibility: _selectedVisibility,
       photoPaths: List.from(_photoPaths),
       createdAt: _selectedDate,
       sharedMapId: widget.editPin?.sharedMapId,
       countryCode: countryCode,
-      pinOuterColor: widget.editPin?.pinOuterColor,
-      pinInnerColor: widget.editPin?.pinInnerColor,
+      pinOuterColor: _selectedPinOuterColor,
+      pinInnerColor: _selectedPinInnerColor,
     );
 
     if (_isEditing) {
@@ -326,6 +334,29 @@ class _PinCreateSheetState extends ConsumerState<PinCreateSheet> {
                             fontWeight: FontWeight.w700,
                           ),
                           decoration: _inputDeco('이곳의 기억을 한 줄로 요약한다면?'),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 카테고리
+                        const _SectionLabel('카테고리'),
+                        _CategorySelector(
+                          selected: _selectedPinShape,
+                          onSelect: (shape) {
+                            HapticFeedback.selectionClick();
+                            setState(() => _selectedPinShape = shape);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 핀 색상
+                        const _SectionLabel('핀 색상'),
+                        _PinColorSelector(
+                          pinShape: _selectedPinShape,
+                          outerColor: _selectedPinOuterColor,
+                          innerColor: _selectedPinInnerColor,
+                          themeColor: context.primaryColor,
+                          onOuterChanged: (c) => setState(() => _selectedPinOuterColor = c),
+                          onInnerChanged: (c) => setState(() => _selectedPinInnerColor = c),
                         ),
                         const SizedBox(height: 16),
 
@@ -901,6 +932,239 @@ String _visibilityLabel(String v) {
   if (v.contains('친구')) return '친구 공개';
   if (v.contains('나만')) return '나만 보기';
   return v;
+}
+
+const _kOuterPresets = <Color?>[
+  null,
+  Color(0xFFFF3B30), Color(0xFFFF9500), Color(0xFFFFCC00),
+  Color(0xFF34C759), Color(0xFF00C7BE), Color(0xFF007AFF),
+  Color(0xFF5856D6), Color(0xFFFF2D55), Color(0xFFAF52DE),
+  Color(0xFFFFFFFF), Color(0xFF8E8E93),
+];
+
+const _kInnerPresets = <Color?>[
+  null,
+  Color(0xFF0A0A0A), Color(0xFF1C1C1E), Color(0xFF0A1628),
+  Color(0xFF0F2D1F), Color(0xFF1A0A28), Color(0xFF280A10),
+  Color(0xFFBF2626), Color(0xFFBF6000), Color(0xFF1A7A3C),
+  Color(0xFF0055BF), Color(0xFF5B21B6), Color(0xFFBF1A5F),
+  Color(0xFF0D7377), Color(0xFFD4A017), Color(0xFF6B3A2A),
+  Color(0xFF5C5C6E), Color(0xFFE5E5EA), Color(0xFFFFFFFF),
+];
+
+class _PinColorSelector extends StatelessWidget {
+  final String pinShape;
+  final int? outerColor;
+  final int? innerColor;
+  final Color themeColor;
+  final ValueChanged<int?> onOuterChanged;
+  final ValueChanged<int?> onInnerChanged;
+
+  const _PinColorSelector({
+    required this.pinShape,
+    required this.outerColor,
+    required this.innerColor,
+    required this.themeColor,
+    required this.onOuterChanged,
+    required this.onInnerChanged,
+  });
+
+  Color get _effectiveOuter => outerColor != null ? Color(outerColor!) : themeColor;
+
+  Color _deriveDark(Color c) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl.withLightness(0.10).withSaturation((hsl.saturation * 0.55).clamp(0.0, 1.0)).toColor();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final outer = _effectiveOuter;
+    final inner = innerColor != null ? Color(innerColor!) : _deriveDark(outer);
+    final svgPath = AppConstants.pinShapeSvgs[pinShape] ?? '';
+    final lighter = Color.lerp(outer, Colors.white, 0.35)!;
+    final darker = Color.lerp(outer, Colors.black, 0.15)!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 미리보기
+        Row(
+          children: [
+            Text('미리보기', style: TextStyle(fontSize: 10, color: AppColors.grey, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            SizedBox(
+              width: 48, height: 48,
+              child: Stack(alignment: Alignment.center, children: [
+                Container(width: 48, height: 48, decoration: BoxDecoration(shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: outer.withValues(alpha: 0.45), blurRadius: 12)])),
+                ShaderMask(
+                  shaderCallback: (r) => LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    colors: [lighter, darker]).createShader(r),
+                  child: Container(width: 46, height: 46, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white)),
+                ),
+                Container(width: 39, height: 39, decoration: BoxDecoration(shape: BoxShape.circle, color: inner)),
+                if (svgPath.isNotEmpty)
+                  SvgPicture.asset(svgPath, width: 17, height: 17,
+                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+              ]),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text('테두리 / 글로우', style: TextStyle(fontSize: 10, color: AppColors.grey, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        _ColorSwatchRow(presets: _kOuterPresets, selectedArgb: outerColor, themeColor: themeColor,
+          onSelect: (c) => onOuterChanged(c?.toARGB32())),
+        const SizedBox(height: 12),
+        Text('핀 내부', style: TextStyle(fontSize: 10, color: AppColors.grey, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        _ColorSwatchRow(presets: _kInnerPresets, selectedArgb: innerColor, themeColor: _deriveDark(outer),
+          onSelect: (c) => onInnerChanged(c?.toARGB32())),
+      ],
+    );
+  }
+}
+
+class _ColorSwatchRow extends StatelessWidget {
+  final List<Color?> presets;
+  final int? selectedArgb;
+  final Color themeColor;
+  final ValueChanged<Color?> onSelect;
+
+  const _ColorSwatchRow({required this.presets, required this.selectedArgb, required this.themeColor, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          ...presets.map((c) {
+            final argb = c?.toARGB32();
+            final isSelected = selectedArgb == argb;
+            final displayColor = c ?? themeColor;
+            return GestureDetector(
+              onTap: () { HapticFeedback.selectionClick(); onSelect(c); },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.only(right: 8),
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle, color: displayColor,
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.white.withValues(alpha: 0.9)
+                        : Colors.white.withValues(alpha: 0.10),
+                    width: isSelected ? 2 : 1,
+                  ),
+                  boxShadow: isSelected
+                      ? [BoxShadow(color: displayColor.withValues(alpha: 0.5), blurRadius: 5)]
+                      : null,
+                ),
+                child: c == null
+                    ? Center(child: Icon(Icons.auto_awesome_rounded, size: 13, color: Colors.white.withValues(alpha: 0.9)))
+                    : null,
+              ),
+            );
+          }),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => AppColorPickerSheet(
+                  initial: selectedArgb != null ? Color(selectedArgb!) : null,
+                  onPick: (c) => onSelect(c),
+                ),
+              );
+            },
+            child: Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const SweepGradient(
+                  colors: [
+                    Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
+                    Color(0xFF00FFFF), Color(0xFF0000FF), Color(0xFFFF00FF),
+                    Color(0xFFFF0000),
+                  ],
+                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1),
+              ),
+              child: Center(
+                child: Icon(Icons.add, size: 14, color: Colors.white.withValues(alpha: 0.9)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategorySelector extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  const _CategorySelector({required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.primaryColor;
+    final shapes = AppConstants.pinShapes;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: shapes.map((shape) {
+          final isSelected = shape == selected;
+          final svgPath = AppConstants.pinShapeSvgs[shape] ?? '';
+          final label = AppConstants.pinShapeNames[shape] ?? shape;
+          return GestureDetector(
+            onTap: () => onSelect(shape),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? accent.withValues(alpha: 0.12) : context.chipBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? accent.withValues(alpha: 0.7) : context.chipBorder,
+                  width: isSelected ? 1.8 : 1.0,
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SvgPicture.asset(
+                    svgPath.isNotEmpty ? svgPath : 'lib/img/place/map-pin.svg',
+                    width: 22,
+                    height: 22,
+                    colorFilter: ColorFilter.mode(
+                      isSelected ? accent : AppColors.grey,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected ? accent : AppColors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
 }
 
 class _Chip extends StatelessWidget {

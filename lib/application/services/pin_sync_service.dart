@@ -74,7 +74,7 @@ class PinSyncService {
 
   Future<void> uploadPin(PinModel pin) async {
     final uid = _db.auth.currentUser?.id;
-    if (uid == null || !isEnabled) return;
+    if (uid == null) return;
     try {
       await _db.from('pins').upsert(_toRow(pin, uid), onConflict: 'id');
     } catch (e) {
@@ -83,9 +83,10 @@ class PinSyncService {
   }
 
   Future<void> deletePin(String id) async {
-    if (!isEnabled) return;
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return;
     try {
-      await _db.from('pins').delete().eq('id', id);
+      await _db.from('pins').delete().eq('id', id).eq('uid', uid);
     } catch (e) {
       debugPrint('[PinSync] deletePin error: $e');
     }

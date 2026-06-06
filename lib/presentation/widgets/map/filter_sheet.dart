@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_constants.dart';
@@ -16,7 +17,6 @@ class FilterSheet extends ConsumerWidget {
     final filter = ref.watch(filterProvider);
 
     return GlassSheet(
-      height: 420,
       onClose: onClose,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -30,6 +30,64 @@ class FilterSheet extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           const Text('원하는 기억만 쏙쏙 골라보세요.', style: TextStyle(fontSize: 14, color: AppColors.greyLight, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 20),
+
+          // 카테고리 필터
+          const Text('카테고리로 찾기', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.grey, letterSpacing: 0.5)),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FilterChip(
+                  label: '전체',
+                  isActive: filter.pinShape == 'all',
+                  onTap: () => ref.read(filterProvider.notifier).setPinShape('all'),
+                ),
+                const SizedBox(width: 8),
+                ...AppConstants.pinShapes.map((shape) {
+                  final svgPath = AppConstants.pinShapeSvgs[shape] ?? '';
+                  final label = AppConstants.pinShapeNames[shape] ?? shape;
+                  final isActive = filter.pinShape == shape;
+                  final chipColor = isActive ? context.themePreset.onPrimary : AppColors.greyLight;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => ref.read(filterProvider.notifier).setPinShape(shape),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: isActive ? context.primaryColor : context.chipBg,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isActive ? context.primaryColor : context.chipBorder,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (svgPath.isNotEmpty)
+                              SvgPicture.asset(
+                                svgPath,
+                                width: 13,
+                                height: 13,
+                                colorFilter: ColorFilter.mode(chipColor, BlendMode.srcIn),
+                              ),
+                            if (svgPath.isNotEmpty) const SizedBox(width: 5),
+                            Text(
+                              label,
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: chipColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
 
           // 반응 필터

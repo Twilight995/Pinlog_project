@@ -120,6 +120,8 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
           locationLabel: _data.locationName,
           categorySvgPath: svgPath,
           categoryName: name,
+          emotion: pin.emotion,
+          countryCode: pin.countryCode,
         ),
         transitionDuration: const Duration(milliseconds: 500),
         reverseTransitionDuration: const Duration(milliseconds: 320),

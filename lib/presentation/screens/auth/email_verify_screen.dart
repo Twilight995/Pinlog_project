@@ -16,6 +16,9 @@ class EmailVerifyScreen extends ConsumerStatefulWidget {
   ConsumerState<EmailVerifyScreen> createState() => _EmailVerifyScreenState();
 }
 
+// Supabase Authentication → Email OTP length 설정값과 반드시 일치해야 함
+const _kOtpLength = 6;
+
 class _EmailVerifyScreenState extends ConsumerState<EmailVerifyScreen>
     with TickerProviderStateMixin {
   final _otpCtrl = TextEditingController();
@@ -79,7 +82,7 @@ class _EmailVerifyScreenState extends ConsumerState<EmailVerifyScreen>
     _otpFocus.addListener(() => setState(() {}));
     _otpCtrl.addListener(() {
       setState(() {});
-      if (_otpCtrl.text.length == 6 && !_verified) {
+      if (_otpCtrl.text.length == _kOtpLength && !_verified) {
         _autoSubmit();
       }
     });
@@ -260,7 +263,7 @@ class _EmailVerifyScreenState extends ConsumerState<EmailVerifyScreen>
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                    const TextSpan(text: ' 으로\n6자리 인증 코드를 보냈습니다'),
+                                    TextSpan(text: ' 으로\n$_kOtpLength자리 인증 코드를 보냈습니다'),
                                   ],
                                 ),
                               ),
@@ -417,7 +420,7 @@ class _EmailVerifyScreenState extends ConsumerState<EmailVerifyScreen>
             // 시각적 OTP 박스 6개
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: List.generate(6, (i) {
+              children: List.generate(_kOtpLength, (i) {
                 final digit = i < code.length ? code[i] : null;
                 final isActive = isFocused && i == code.length && !authState.isLoading;
                 final isFilled = digit != null;
@@ -515,7 +518,7 @@ class _EmailVerifyScreenState extends ConsumerState<EmailVerifyScreen>
                 focusNode: _otpFocus,
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.done,
-                maxLength: 6,
+                maxLength: _kOtpLength,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: const InputDecoration(
                   counterText: '',
@@ -532,7 +535,7 @@ class _EmailVerifyScreenState extends ConsumerState<EmailVerifyScreen>
   }
 
   Widget _buildVerifyButton(String code, PinlogAuthState authState) {
-    final isReady = code.length == 6 && !authState.isLoading && !_verified;
+    final isReady = code.length == _kOtpLength && !authState.isLoading && !_verified;
 
     return GestureDetector(
       onTap: isReady ? _autoSubmit : null,

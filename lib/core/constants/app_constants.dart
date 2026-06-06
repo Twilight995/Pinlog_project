@@ -115,6 +115,64 @@ class AppConstants {
   // Hive box 이름
   static const pinsBox = 'pins';
 
+  // 국가코드 → 국기 SVG 경로
+  static const flagSvgs = <String, String>{
+    'KR': 'lib/img/flag/flag-for-south-korea-svgrepo-com.svg',
+    'US': 'lib/img/flag/flag-usa-solid-svgrepo-com.svg',
+    'CN': 'lib/img/flag/flag-china-solid-svgrepo-com.svg',
+    'JP': 'lib/img/flag/flag-for-japan-svgrepo-com.svg',
+    'TW': 'lib/img/flag/flag-for-taiwan-svgrepo-com.svg',
+    'GB': 'lib/img/flag/flag-for-united-kingdom-svgrepo-com.svg',
+    'FR': 'lib/img/flag/flag-for-france-svgrepo-com.svg',
+    'DE': 'lib/img/flag/flag-for-germany-svgrepo-com.svg',
+    'IT': 'lib/img/flag/flag-for-italy-svgrepo-com.svg',
+    'ES': 'lib/img/flag/flag-for-spain-svgrepo-com.svg',
+    'TH': 'lib/img/flag/flag-for-thailand-svgrepo-com.svg',
+    'VN': 'lib/img/flag/flag-for-vietnam-svgrepo-com.svg',
+    'SG': 'lib/img/flag/flag-for-singapore-svgrepo-com.svg',
+    'MY': 'lib/img/flag/flag-for-malaysia-svgrepo-com.svg',
+    'ID': 'lib/img/flag/flag-for-indonesia-svgrepo-com.svg',
+    'PH': 'lib/img/flag/flag-for-philippines-svgrepo-com.svg',
+    'AU': 'lib/img/flag/flag-for-australia-svgrepo-com.svg',
+    'CA': 'lib/img/flag/canada-maple-leaf-svgrepo-com.svg',
+    'AT': 'lib/img/flag/flag-for-flag-austria-svgrepo-com.svg',
+    'BR': 'lib/img/flag/flag-for-flag-brazil-svgrepo-com.svg',
+    'KH': 'lib/img/flag/flag-for-flag-cambodia-svgrepo-com.svg',
+    'DK': 'lib/img/flag/flag-for-flag-denmark-svgrepo-com.svg',
+    'EG': 'lib/img/flag/flag-for-flag-egypt-svgrepo-com.svg',
+    'GR': 'lib/img/flag/flag-for-flag-greece-svgrepo-com.svg',
+    'HK': 'lib/img/flag/flag-for-flag-hong-kong-sar-china-svgrepo-com.svg',
+    'HU': 'lib/img/flag/flag-for-flag-hungary-svgrepo-com.svg',
+    'IN': 'lib/img/flag/flag-for-flag-india-svgrepo-com.svg',
+    'LA': 'lib/img/flag/flag-for-flag-laos-svgrepo-com.svg',
+    'MV': 'lib/img/flag/flag-for-flag-maldives-svgrepo-com.svg',
+    'MX': 'lib/img/flag/flag-for-flag-mexico-svgrepo-com.svg',
+    'MM': 'lib/img/flag/flag-for-flag-myanmar-burma-svgrepo-com.svg',
+    'NP': 'lib/img/flag/flag-for-flag-nepal-svgrepo-com.svg',
+    'NL': 'lib/img/flag/flag-for-flag-netherlands-svgrepo-com.svg',
+    'NZ': 'lib/img/flag/flag-for-flag-new-zealand-svgrepo-com.svg',
+    'NO': 'lib/img/flag/flag-for-flag-norway-svgrepo-com.svg',
+    'PT': 'lib/img/flag/flag-for-flag-portugal-svgrepo-com.svg',
+    'QA': 'lib/img/flag/flag-for-flag-qatar-svgrepo-com.svg',
+    'LK': 'lib/img/flag/flag-for-flag-sri-lanka-svgrepo-com.svg',
+    'SE': 'lib/img/flag/flag-for-flag-sweden-svgrepo-com.svg',
+    'CH': 'lib/img/flag/flag-for-flag-switzerland-svgrepo-com.svg',
+    'TR': 'lib/img/flag/flag-for-flag-turkey-svgrepo-com.svg',
+    'AE': 'lib/img/flag/united-arab-emirates-svgrepo-com.svg',
+  };
+
+  static String? flagSvgPath(String? countryCode) =>
+      countryCode != null ? flagSvgs[countryCode.toUpperCase()] : null;
+
+  // 감정 → SVG 경로
+  static const emotionSvgs = <String, String>{
+    '좋아요':  'lib/img/emotion/hand-heart.svg',
+    '별로에요': 'lib/img/emotion/sad-circle-svgrepo-com.svg',
+  };
+
+  static String? emotionSvgPath(String? emotion) =>
+      emotion != null ? emotionSvgs[emotion] : null;
+
   /// 카테고리별 자동 색상 — 테마 primary의 hue를 기준으로 20단계 분배
   /// 테마가 바뀌면 전체 팔레트가 함께 이동해 항상 어울리는 색이 나온다.
   static Color categoryColor(String shape, AppThemePreset theme) {

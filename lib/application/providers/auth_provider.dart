@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -136,8 +137,8 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
       final user = session.user;
       final meta = user.userMetadata ?? {};
       final nickname =
-          (meta['full_name'] as String?)?.split(' ').first ??
-          (meta['name'] as String?)?.split(' ').first ??
+          (meta['full_name'] as String?)?.trim() ??
+          (meta['name'] as String?)?.trim() ??
           (meta['preferred_username'] as String?);
       final avatarUrl = meta['avatar_url'] as String?;
       debugPrint('✅ [Pinlog] getSessionFromUrl success: ${user.id}');
@@ -203,6 +204,30 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
       );
       return;
     }
+    // Supabase users 테이블에서 닉네임을 가져와 Hive에 동기화
+    try {
+      final res = await Supabase.instance.client
+          .from('users')
+          .select('nickname, friend_code')
+          .eq('uid', uid)
+          .maybeSingle();
+      if (res != null) {
+        final repo = ProfileRepository();
+        final remoteNick   = res['nickname']    as String?;
+        final remoteCode   = res['friend_code'] as String?;
+        final remoteAvatar = res['avatar_url']  as String?;
+        if (remoteNick != null && remoteNick.isNotEmpty) {
+          await repo.setNickname(remoteNick);
+        }
+        if (remoteCode != null && remoteCode.isNotEmpty) {
+          await repo.setFriendCode(remoteCode);
+        }
+        if (remoteAvatar != null && remoteAvatar.isNotEmpty) {
+          await repo.setPhotoPath(remoteAvatar);
+        }
+      }
+    } catch (_) {}
+
     final isAdmin = await _checkIsAdmin(uid);
     state = PinlogAuthState(isAuthenticated: true, isAdmin: isAdmin);
   }
@@ -342,7 +367,47 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
     state = const PinlogAuthState(isAuthenticated: true);
   }
 
-  /// Supabase OAuth (Google / Kakao)
+  /// 카카오 SDK 직접 로그인 (OIDC) — account_email scope 우회
+  Future<void> signInWithKakao() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final token = await kakao.UserApi.instance.loginWithKakaoAccount();
+
+      final idToken = token.idToken;
+      if (idToken == null) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Kakao OIDC 토큰 없음 — 카카오 로그인 설정에서 OpenID Connect를 활성화해주세요.',
+        );
+        return;
+      }
+
+      final res = await Supabase.instance.client.auth.signInWithIdToken(
+        provider: OAuthProvider.kakao,
+        idToken: idToken,
+        accessToken: token.accessToken,
+      );
+
+      if (res.session != null) {
+        final user = res.session!.user;
+        final meta = user.userMetadata ?? {};
+        final nickname =
+            (meta['full_name'] as String?)?.trim() ??
+            (meta['name'] as String?)?.trim() ??
+            (meta['preferred_username'] as String?);
+        final avatarUrl = meta['avatar_url'] as String?;
+        _persistMode(_kAuthModeSupabase);
+        _listenSession();
+        await _finalizeLogin(user.id, nickname: nickname, avatarUrl: avatarUrl);
+      } else {
+        state = state.copyWith(isLoading: false, error: '카카오 로그인에 실패했습니다.');
+      }
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: '[Kakao] $e');
+    }
+  }
+
+  /// Supabase OAuth (Google)
   Future<void> signInWithOAuth(OAuthProvider provider) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -640,15 +705,31 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
       await client.from('users').upsert(data, onConflict: 'uid');
     } catch (_) {}
 
-    // 온보딩에서 생성한 친구코드를 로컬 Hive에도 동기화 (BUG-06)
+    final repo = ProfileRepository();
     try {
-      await ProfileRepository().setFriendCode(friendCode);
+      await repo.setNickname(nickname);
+      await repo.setFriendCode(friendCode);
+      if (avatarUrl != null) await repo.setPhotoPath(avatarUrl);
     } catch (_) {}
 
     state = const PinlogAuthState(isAuthenticated: true);
   }
 
   // ─── 로그아웃 / 탈퇴 ─────────────────────────────────────────────────────────
+
+  /// 비밀번호 변경 (로그인 상태). null = 성공
+  Future<String?> changePassword(String newPassword) async {
+    try {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } catch (_) {
+      return '비밀번호 변경에 실패했습니다.';
+    }
+  }
 
   Future<void> signOut() async {
     _oauthSub?.cancel();
@@ -657,6 +738,7 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
     _sessionSub = null;
     await Supabase.instance.client.auth.signOut();
     Hive.box<dynamic>('settings').delete(_kAuthModeKey);
+    try { await PinRepository().clearAll(); } catch (_) {}
     state = const PinlogAuthState();
   }
 

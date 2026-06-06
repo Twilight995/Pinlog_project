@@ -2,7 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../data/models/pin_model.dart';
+import '../../data/repositories/profile_repository.dart';
+import '../../data/repositories/shared_map_repository.dart';
 import 'profile_provider.dart';
 
 // ─── Model ───────────────────────────────────────────────────────────────────
@@ -55,6 +59,77 @@ class Friend {
       );
 }
 
+// ─── 데모 친구 상수 ────────────────────────────────────────────────────────────
+
+const _kDemoUidJihu = 'demo_jihu_001';
+const _kDemoUidSeoyeon = 'demo_seoyeon_002';
+
+/// 데모용 핀 목록 (소셜 지도에 표시).
+List<SharedPinEntry> buildDemoPins() {
+  final jihuPins = [
+    SharedPinEntry(
+      ownerUid: _kDemoUidJihu,
+      ownerNickname: '김지후',
+      pin: PinModel(
+        id: 'demo_j1', title: '을지로 감성 카페', description: '숨겨진 루프탑',
+        latitude: 37.5662, longitude: 126.9938, emotion: '좋아요', weather: '맑음',
+        companions: [], intensityLevel: 4, pinShape: 'cafe',
+        visibility: '👥 친구 공개', photoPaths: [], countryCode: 'KR',
+        taggedFriendCodes: [], createdAt: DateTime(2026, 5, 28),
+      ),
+    ),
+    SharedPinEntry(
+      ownerUid: _kDemoUidJihu,
+      ownerNickname: '김지후',
+      pin: PinModel(
+        id: 'demo_j2', title: '홍대 새벽 공연', description: '버스킹 최고였다',
+        latitude: 37.5573, longitude: 126.9245, emotion: '좋아요', weather: '맑음',
+        companions: [], intensityLevel: 5, pinShape: 'music',
+        visibility: '👥 친구 공개', photoPaths: [], countryCode: 'KR',
+        taggedFriendCodes: [], createdAt: DateTime(2026, 6, 1),
+      ),
+    ),
+    SharedPinEntry(
+      ownerUid: _kDemoUidJihu,
+      ownerNickname: '김지후',
+      pin: PinModel(
+        id: 'demo_j3', title: '성수동 팝업', description: '줄 서서 들어간 보람',
+        latitude: 37.5446, longitude: 127.0566, emotion: '좋아요', weather: '구름 조금',
+        companions: [], intensityLevel: 3, pinShape: 'shopping',
+        visibility: '👥 친구 공개', photoPaths: [], countryCode: 'KR',
+        taggedFriendCodes: [], createdAt: DateTime(2026, 6, 3),
+      ),
+    ),
+  ];
+
+  final seoyeonPins = [
+    SharedPinEntry(
+      ownerUid: _kDemoUidSeoyeon,
+      ownerNickname: '이서연',
+      pin: PinModel(
+        id: 'demo_s1', title: '한강 일몰', description: '노을이 너무 예뻤다',
+        latitude: 37.5283, longitude: 126.9340, emotion: '좋아요', weather: '맑음',
+        companions: [], intensityLevel: 5, pinShape: 'nature',
+        visibility: '👥 친구 공개', photoPaths: [], countryCode: 'KR',
+        taggedFriendCodes: [], createdAt: DateTime(2026, 5, 30),
+      ),
+    ),
+    SharedPinEntry(
+      ownerUid: _kDemoUidSeoyeon,
+      ownerNickname: '이서연',
+      pin: PinModel(
+        id: 'demo_s2', title: '북촌 한옥마을', description: '고요한 골목',
+        latitude: 37.5826, longitude: 126.9852, emotion: '좋아요', weather: '맑음',
+        companions: [], intensityLevel: 3, pinShape: 'palace',
+        visibility: '👥 친구 공개', photoPaths: [], countryCode: 'KR',
+        taggedFriendCodes: [], createdAt: DateTime(2026, 6, 2),
+      ),
+    ),
+  ];
+
+  return [...jihuPins, ...seoyeonPins];
+}
+
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 class FriendsNotifier extends StateNotifier<List<Friend>> {
@@ -90,6 +165,21 @@ class FriendsNotifier extends StateNotifier<List<Friend>> {
       ),
     ];
     await _persist();
+    if (uid != null) _notifyFriend(uid);
+  }
+
+  void _notifyFriend(String targetUid) {
+    final myNickname = ProfileRepository().getNickname();
+    final displayName = myNickname.isEmpty ? '누군가' : myNickname;
+    Supabase.instance.client.functions.invoke(
+      'send-fcm',
+      body: {
+        'target_uid': targetUid,
+        'title': '새 친구 요청이 왔어요',
+        'body': '$displayName님이 친구를 추가했어요',
+        'data': {'type': 'friend_request'},
+      },
+    ).ignore();
   }
 
   Future<void> removeFriend(String code) async {
@@ -102,6 +192,26 @@ class FriendsNotifier extends StateNotifier<List<Friend>> {
       for (final f in state)
         if (f.code == code) f.copyWith(intimacyLevel: level.clamp(1, 5)) else f,
     ];
+    await _persist();
+  }
+
+  bool get hasDemoFriends =>
+      state.any((f) => f.supabaseUid == _kDemoUidJihu || f.supabaseUid == _kDemoUidSeoyeon);
+
+  Future<void> addDemoFriends() async {
+    final demoFriends = [
+      Friend(code: 'DEMO01', name: '김지후', addedAt: DateTime(2026, 5, 1), supabaseUid: _kDemoUidJihu, intimacyLevel: 4),
+      Friend(code: 'DEMO02', name: '이서연', addedAt: DateTime(2026, 5, 10), supabaseUid: _kDemoUidSeoyeon, intimacyLevel: 3),
+    ];
+    final existing = state.map((f) => f.code).toSet();
+    final toAdd = demoFriends.where((f) => !existing.contains(f.code)).toList();
+    if (toAdd.isEmpty) return;
+    state = [...state, ...toAdd];
+    await _persist();
+  }
+
+  Future<void> clearDemoFriends() async {
+    state = state.where((f) => f.supabaseUid != _kDemoUidJihu && f.supabaseUid != _kDemoUidSeoyeon).toList();
     await _persist();
   }
 

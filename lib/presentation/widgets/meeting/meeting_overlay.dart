@@ -14,7 +14,7 @@ class MeetingMapOverlay extends StatelessWidget {
   final Offset friendScreenPos;
   final Meeting meeting;
   final double? distanceMeters;
-  final int? etaMinutes;
+  final int? etaSeconds;
 
   const MeetingMapOverlay({
     super.key,
@@ -22,7 +22,7 @@ class MeetingMapOverlay extends StatelessWidget {
     required this.friendScreenPos,
     required this.meeting,
     this.distanceMeters,
-    this.etaMinutes,
+    this.etaSeconds,
   });
 
   @override
@@ -52,7 +52,7 @@ class MeetingMapOverlay extends StatelessWidget {
             child: _EtaBadge(
               meeting: meeting,
               distanceMeters: distanceMeters,
-              etaMinutes: etaMinutes,
+              etaSeconds: etaSeconds,
             ),
           ),
 
@@ -131,13 +131,26 @@ class _RubberBandPainter extends CustomPainter {
 class _EtaBadge extends StatelessWidget {
   final Meeting meeting;
   final double? distanceMeters;
-  final int? etaMinutes;
+  final int? etaSeconds;
 
   const _EtaBadge({
     required this.meeting,
     this.distanceMeters,
-    this.etaMinutes,
+    this.etaSeconds,
   });
+
+  // API 결과 우선, 없으면 거리 기반 fallback (대중교통 포함)
+  int? get _etaMinutes {
+    if (etaSeconds != null) return (etaSeconds! / 60).ceil().clamp(1, 999);
+    final d = distanceMeters;
+    if (d == null || d <= 0) return null;
+    final speedMs = switch (meeting.transitMode) {
+      TransitMode.walking => 5000 / 3600,
+      TransitMode.transit => 25000 / 3600,
+      TransitMode.driving => 30000 / 3600,
+    };
+    return (d / speedMs / 60).ceil().clamp(1, 999);
+  }
 
   String get _distLabel {
     final d = distanceMeters;
@@ -148,6 +161,7 @@ class _EtaBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final eta = _etaMinutes;
     return Container(
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -179,9 +193,9 @@ class _EtaBadge extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 5),
-          if (etaMinutes != null)
+          if (eta != null)
             Text(
-              '도착 $etaMinutes분 전',
+              '약 $eta분',
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
