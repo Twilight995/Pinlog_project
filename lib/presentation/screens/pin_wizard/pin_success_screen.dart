@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,11 +9,7 @@ import '../../../application/providers/pin_provider.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 
-/// 핀 생성 성공 모먼트.
-///
-/// Pencil 디자인 `Qsw0P`(430×932)를 픽셀 단위로 재현.
-/// 화면 폭이 430과 다르면 모든 좌표/크기에 `scale = width / 430` 비례 적용.
-class PinSuccessScreen extends ConsumerWidget {
+class PinSuccessScreen extends ConsumerStatefulWidget {
   final String pinTitle;
   final String? locationLabel;
   final String categorySvgPath;
@@ -29,12 +27,93 @@ class PinSuccessScreen extends ConsumerWidget {
     this.countryCode,
   });
 
+  @override
+  ConsumerState<PinSuccessScreen> createState() => _PinSuccessScreenState();
+}
+
+class _PinSuccessScreenState extends ConsumerState<PinSuccessScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  // ── 핀 성장 (0%–58%) ─────────────────────────────────────────────────────
+  late final Animation<double> _pinScale;
+  late final Animation<double> _pinRise; // y offset: 55 → 0
+
+  // ── 지면 파장 (0%–52%) ───────────────────────────────────────────────────
+  late final Animation<double> _rings;
+
+  // ── 씨앗 파티클 (28%–72%) ────────────────────────────────────────────────
+  late final Animation<double> _sparks;
+
+  // ── 정보 텍스트 등장 (60%–84%) ───────────────────────────────────────────
+  late final Animation<double> _infoFade;
+  late final Animation<double> _infoRise; // y offset: 20 → 0
+
+  bool _hapticFired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+
+    _pinScale = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.0, 0.58, curve: Curves.easeOutBack),
+      ),
+    );
+    _pinRise = Tween<double>(begin: 60.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+      ),
+    );
+    _rings = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.0, 0.52, curve: Curves.easeOut),
+    );
+    _sparks = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.28, 0.72, curve: Curves.easeOut),
+    );
+    _infoFade = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.60, 0.84, curve: Curves.easeOut),
+    );
+    _infoRise = Tween<double>(begin: 20.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.60, 0.84, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    // 핀이 자리 잡는 순간 촉각 피드백
+    _ctrl.addListener(() {
+      if (!_hapticFired && _ctrl.value >= 0.58) {
+        _hapticFired = true;
+        HapticFeedback.lightImpact();
+      }
+    });
+
+    HapticFeedback.mediumImpact();
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
   void _back(BuildContext context) {
     HapticFeedback.lightImpact();
     Navigator.of(context).pop();
   }
 
-  void _createAnother(BuildContext context, WidgetRef ref) {
+  void _createAnother(BuildContext context) {
     HapticFeedback.lightImpact();
     Navigator.of(context).pop();
     Future.microtask(() {
@@ -43,384 +122,464 @@ class PinSuccessScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: LayoutBuilder(
-        builder: (context, c) {
-          final w = c.maxWidth;
-          final scale = w / 430.0; // pencil 디자인 기준 폭
-          return Stack(
-            children: [
-              // 배경 글로우 2개 (sBg1 라벤더 상단 + sBg2 살구 하단)
-              _BgGlow(
-                left: -200 * scale,
-                top: -200 * scale,
-                size: 830 * scale,
-                color: const Color(0xFFA78BFA),
-                opacity: 0.2,
-                colorStop: 0.55,
+  Widget build(BuildContext context) {
+    final accent = context.primaryColor;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF080C10),
+        body: Stack(
+          children: [
+            // ── 지도 배경 ───────────────────────────────────────────────
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _MapBackgroundPainter(accent: accent),
               ),
-              _BgGlow(
-                left: -150 * scale,
-                top: 400 * scale,
-                size: 730 * scale,
-                color: const Color(0xFFFFC093),
-                opacity: 0.16,
-                colorStop: 0.55,
-              ),
-              // 핀 아이콘 + 감정 + 국기 비주얼
-              _PinMemoryVisual(
-                scale: scale,
-                categorySvgPath: categorySvgPath,
-                emotion: emotion,
-                countryCode: countryCode,
-              ),
-              // 텍스트 + 버튼
-              SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(20, 0, 20, 28 * scale),
-                  child: Column(
-                    children: [
-                      SizedBox(height: 390 * scale),
-                      const Text(
-                        '기억이',
-                        style: TextStyle(
-                          fontSize: 42,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                          height: 1.05,
-                          fontFamily: AppTokens.fontDisplay,
-                        ),
-                      ),
-                      const Text(
-                        '심어졌어요',
-                        style: TextStyle(
-                          fontSize: 42,
-                          fontWeight: FontWeight.w700,
-                          fontStyle: FontStyle.italic,
-                          color: AppColors.textPrimary,
-                          height: 1.05,
-                          fontFamily: AppTokens.fontDisplay,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      _ContextChip(
-                        locationLabel: locationLabel,
-                        svgPath: categorySvgPath,
-                        categoryName: categoryName,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        '"$pinTitle"',
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: AppOverlays.w67,
-                          fontFamily: AppTokens.fontDisplay,
-                        ),
-                      ),
-                      const Spacer(),
-                      _PrimaryButton(onTap: () => _back(context)),
-                      const SizedBox(height: 14),
-                      GestureDetector(
-                        onTap: () => _createAnother(context, ref),
-                        behavior: HitTestBehavior.opaque,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '또 다른 기억 심기',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppOverlays.w67,
-                                  fontFamily: AppTokens.fontBody,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Icon(
-                                Icons.add_rounded,
-                                size: 14,
-                                color: AppOverlays.w67,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+            ),
+            // ── 하단 페이드 오버레이 ────────────────────────────────────
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              height: 320,
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xE5080C10)],
+                    stops: [0.0, 0.55],
                   ),
                 ),
               ),
-            ],
-          );
-        },
+            ),
+
+            // ── 본문 ────────────────────────────────────────────────────
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(24, 0, 24, bottomPad + 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 지도 영역 (핀이 자라나는 공간)
+                    Expanded(
+                      flex: 52,
+                      child: AnimatedBuilder(
+                        animation: _ctrl,
+                        builder: (_, _) => Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // 파장 링
+                            _RingWaves(
+                              accent: accent,
+                              progress: _rings.value,
+                            ),
+                            // 씨앗 파티클
+                            _SparkleParticles(
+                              accent: accent,
+                              progress: _sparks.value,
+                            ),
+                            // 성장하는 핀
+                            Transform.translate(
+                              offset: Offset(0, _pinRise.value),
+                              child: Transform.scale(
+                                scale: _pinScale.value,
+                                child: _PinMarker(
+                                  accent: accent,
+                                  svgPath: widget.categorySvgPath,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // 정보 영역
+                    Expanded(
+                      flex: 48,
+                      child: AnimatedBuilder(
+                        animation: _ctrl,
+                        builder: (_, _) => Opacity(
+                          opacity: _infoFade.value,
+                          child: Transform.translate(
+                            offset: Offset(0, _infoRise.value),
+                            child: _InfoContent(
+                              accent: accent,
+                              categoryName: widget.categoryName,
+                              locationLabel: widget.locationLabel,
+                              svgPath: widget.categorySvgPath,
+                              pinTitle: widget.pinTitle,
+                              emotion: widget.emotion,
+                              countryCode: widget.countryCode,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // 지도에서 보기 버튼
+                    _PrimaryButton(
+                      accent: accent,
+                      onTap: () => _back(context),
+                    ),
+                    const SizedBox(height: 14),
+                    GestureDetector(
+                      onTap: () => _createAnother(context),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '또 다른 기억 심기',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withValues(alpha: 0.35),
+                                fontFamily: AppTokens.fontBody,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Icon(
+                              Icons.add_rounded,
+                              size: 14,
+                              color: Colors.white.withValues(alpha: 0.35),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ─── 배경 글로우 ────────────────────────────────────────────────────────
+// ─── 지도 배경 ──────────────────────────────────────────────────────────────────
 
-class _BgGlow extends StatelessWidget {
-  final double left;
-  final double top;
-  final double size;
-  final Color color;
-  final double opacity;
-  final double colorStop;
+class _MapBackgroundPainter extends CustomPainter {
+  final Color accent;
+  const _MapBackgroundPainter({required this.accent});
 
-  const _BgGlow({
-    required this.left,
-    required this.top,
-    required this.size,
-    required this.color,
-    required this.opacity,
-    required this.colorStop,
-  });
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rng = math.Random(7);
+
+    // 블록 (건물/구역)
+    final blockPaint = Paint()
+      ..color = const Color(0xFF111820)
+      ..style = PaintingStyle.fill;
+
+    final blockRects = [
+      Rect.fromLTWH(size.width * 0.05, size.height * 0.08, size.width * 0.22, size.height * 0.14),
+      Rect.fromLTWH(size.width * 0.32, size.height * 0.06, size.width * 0.18, size.height * 0.10),
+      Rect.fromLTWH(size.width * 0.62, size.height * 0.10, size.width * 0.30, size.height * 0.16),
+      Rect.fromLTWH(size.width * 0.10, size.height * 0.30, size.width * 0.15, size.height * 0.20),
+      Rect.fromLTWH(size.width * 0.70, size.height * 0.34, size.width * 0.24, size.height * 0.18),
+      Rect.fromLTWH(size.width * 0.05, size.height * 0.58, size.width * 0.28, size.height * 0.12),
+      Rect.fromLTWH(size.width * 0.60, size.height * 0.60, size.width * 0.32, size.height * 0.14),
+    ];
+    for (final r in blockRects) {
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(3)), blockPaint);
+    }
+
+    // 도로
+    final roadPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.038)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+
+    void line(Offset a, Offset b) => canvas.drawLine(a, b, roadPaint);
+
+    // 수직 도로
+    line(Offset(size.width * 0.30, 0), Offset(size.width * 0.30, size.height));
+    line(Offset(size.width * 0.60, 0), Offset(size.width * 0.60, size.height));
+    line(Offset(size.width * 0.78, 0), Offset(size.width * 0.78, size.height));
+    // 수평 도로
+    line(Offset(0, size.height * 0.26), Offset(size.width, size.height * 0.26));
+    line(Offset(0, size.height * 0.54), Offset(size.width, size.height * 0.54));
+    line(Offset(0, size.height * 0.72), Offset(size.width, size.height * 0.72));
+    // 대각 도로
+    roadPaint.strokeWidth = 0.8;
+    final path = Path()
+      ..moveTo(0, size.height * 0.40)
+      ..cubicTo(
+        size.width * 0.25, size.height * 0.40,
+        size.width * 0.55, size.height * 0.34,
+        size.width, size.height * 0.38,
+      );
+    canvas.drawPath(path, roadPaint);
+
+    // 다른 핀들 (희미하게)
+    final pinPaint = Paint()
+      ..color = accent.withValues(alpha: 0.18)
+      ..style = PaintingStyle.fill;
+    final pinPositions = [
+      Offset(size.width * 0.15, size.height * 0.18),
+      Offset(size.width * 0.72, size.height * 0.15),
+      Offset(size.width * 0.08, size.height * 0.44),
+      Offset(size.width * 0.84, size.height * 0.42),
+      Offset(size.width * 0.20, size.height * 0.65),
+      Offset(size.width * 0.88, size.height * 0.24),
+    ];
+    for (int i = 0; i < pinPositions.length; i++) {
+      final pos = pinPositions[i];
+      final r = 3.5 + rng.nextDouble() * 2;
+      canvas.drawCircle(pos, r, pinPaint..color = accent.withValues(alpha: 0.10 + rng.nextDouble() * 0.12));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MapBackgroundPainter old) => old.accent != accent;
+}
+
+// ─── 파장 링 ────────────────────────────────────────────────────────────────────
+
+class _RingWaves extends StatelessWidget {
+  final Color accent;
+  final double progress; // 0 → 1
+
+  const _RingWaves({required this.accent, required this.progress});
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: left,
-      top: top,
-      child: IgnorePointer(
-        child: Opacity(
-          opacity: opacity,
-          child: Container(
+    return CustomPaint(
+      size: const Size(240, 240),
+      painter: _RingPainter(accent: accent, progress: progress),
+    );
+  }
+}
+
+class _RingPainter extends CustomPainter {
+  final Color accent;
+  final double progress;
+  const _RingPainter({required this.accent, required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()..style = PaintingStyle.stroke;
+
+    // 3개 링, 각각 약간의 지연 효과
+    for (int i = 0; i < 3; i++) {
+      final delayed = ((progress - i * 0.12).clamp(0.0, 1.0));
+      if (delayed <= 0) continue;
+      final radius = delayed * (60.0 + i * 18.0);
+      final opacity = (1 - delayed) * (0.55 - i * 0.12);
+      if (opacity <= 0) continue;
+      paint
+        ..color = accent.withValues(alpha: opacity)
+        ..strokeWidth = 1.2 - i * 0.25;
+      canvas.drawCircle(center, radius, paint);
+    }
+
+    // 중심 점 (씨앗)
+    if (progress < 0.8) {
+      final dotOpacity = (1 - progress / 0.8).clamp(0.0, 1.0) * 0.6;
+      canvas.drawCircle(
+        center,
+        3.5,
+        Paint()..color = accent.withValues(alpha: dotOpacity),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) =>
+      old.progress != progress || old.accent != accent;
+}
+
+// ─── 씨앗 파티클 ────────────────────────────────────────────────────────────────
+
+class _SparkleParticles extends StatelessWidget {
+  final Color accent;
+  final double progress;
+  const _SparkleParticles({required this.accent, required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(180, 180),
+      painter: _SparklePainter(accent: accent, progress: progress),
+    );
+  }
+}
+
+class _SparklePainter extends CustomPainter {
+  final Color accent;
+  final double progress;
+  const _SparklePainter({required this.accent, required this.progress});
+
+  // 파티클 방향 (normalized) — 새싹이 퍼지는 방향 (위쪽 집중)
+  static const _dirs = [
+    Offset(-0.90, -1.10), Offset(0, -1.40), Offset(0.90, -1.10),
+    Offset(-1.30, -0.50), Offset(1.30, -0.50),
+    Offset(-0.70,  0.60), Offset(0.70,  0.60),
+    Offset(-1.10, -1.40), Offset(1.10, -1.40),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final center = Offset(size.width / 2, size.height / 2);
+    const maxDist = 62.0;
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (int i = 0; i < _dirs.length; i++) {
+      final dist = progress * maxDist;
+      final pos = center + Offset(_dirs[i].dx * dist, _dirs[i].dy * dist);
+      final opacity = (1 - progress) * 0.70;
+      final r = (3.2 - progress * 2.4).clamp(0.4, 3.2);
+      if (opacity < 0.04) continue;
+      // 짝수 파티클은 흰색, 홀수는 accent
+      paint.color = (i % 2 == 0 ? accent : Colors.white).withValues(alpha: opacity);
+      canvas.drawCircle(pos, r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SparklePainter old) =>
+      old.progress != progress || old.accent != accent;
+}
+
+// ─── 핀 마커 ────────────────────────────────────────────────────────────────────
+
+class _PinMarker extends StatelessWidget {
+  final Color accent;
+  final String svgPath;
+  const _PinMarker({required this.accent, required this.svgPath});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 104.0;
+    final lighter = Color.lerp(accent, Colors.white, 0.32)!;
+    final darker  = Color.lerp(accent, Colors.black, 0.08)!;
+    final body    = HSLColor.fromColor(accent)
+        .withLightness(0.11)
+        .withSaturation(
+            (HSLColor.fromColor(accent).saturation * 0.50).clamp(0.0, 1.0))
+        .toColor();
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // 글로우
+          Container(
             width: size,
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: RadialGradient(
-                radius: 0.5,
-                colors: [color, Colors.black],
-                stops: [0.0, colorStop],
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.50),
+                  blurRadius: 32,
+                  spreadRadius: 3,
+                ),
+              ],
+            ),
+          ),
+          // 그라디언트 테두리
+          ShaderMask(
+            shaderCallback: (r) => LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [lighter, darker],
+            ).createShader(r),
+            child: Container(
+              width: size,
+              height: size,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── 구슬 + 물결 + 별 ─────────────────────────────────────────────────
-// Pencil x/y 좌표 그대로 + scale 적용.
-
-// ─── 핀 메모리 비주얼 (핀 마커 + 감정 + 국기) ────────────────────────────────
-
-class _PinMemoryVisual extends StatelessWidget {
-  final double scale;
-  final String categorySvgPath;
-  final String? emotion;
-  final String? countryCode;
-
-  const _PinMemoryVisual({
-    required this.scale,
-    required this.categorySvgPath,
-    required this.emotion,
-    required this.countryCode,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = context.primaryColor;
-    final lighter = Color.lerp(accent, Colors.white, 0.40)!;
-    final darker = Color.lerp(accent, Colors.black, 0.10)!;
-    final bodyColor = HSLColor.fromColor(accent)
-        .withLightness(0.12)
-        .withSaturation((HSLColor.fromColor(accent).saturation * 0.55).clamp(0.0, 1.0))
-        .toColor();
-
-    final emotionSvg = AppConstants.emotionSvgPath(emotion);
-    final flagSvg = (countryCode != null && countryCode != 'KR')
-        ? AppConstants.flagSvgPath(countryCode)
-        : null;
-
-    // 물결 ripple 렌더 헬퍼 — 핀 바텀(65+110=175pt) 아래부터 시작
-    Widget ripple(double w, double h, double opacity) => Container(
-          width: w * scale,
-          height: h * scale,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: accent.withValues(alpha: opacity),
-              width: 1.0 * scale,
+          // 바디
+          Container(
+            width: size - 5,
+            height: size - 5,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: body),
+          ),
+          // 스펙큘러
+          Positioned(
+            top: size * 0.16,
+            left: size * 0.30,
+            child: Container(
+              width: size * 0.34,
+              height: size * 0.13,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(99),
+                color: Colors.white.withValues(alpha: 0.14),
+              ),
             ),
           ),
-        );
-
-    // 별 dot 렌더 헬퍼
-    Widget dot(double size, Color color, double opacity) {
-      final s = size * scale;
-      return Container(
-        width: s, height: s,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color.withValues(alpha: opacity),
-          boxShadow: [BoxShadow(color: color.withValues(alpha: opacity * 0.4), blurRadius: s * 1.5)],
-        ),
-      );
-    }
-
-    // 서브 아이콘 카드 (감정/국기) — 핀 옆, 겹치지 않게
-    Widget iconCard({required Widget child}) => Container(
-          width: 52 * scale,
-          height: 52 * scale,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.08),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.20), width: 1.2),
-            boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.30), blurRadius: 16 * scale)],
-          ),
-          child: Center(child: child),
-        );
-
-    // 핀 마커 크기: 110pt
-    final pinSize = 110.0 * scale;
-    final pinR = pinSize / 2;
-    // 핀 top: 노치/Dynamic Island 아래 충분한 여백 확보 (90pt)
-    const pinTop = 90.0;
-    // 아이콘 카드 위치 (design-space 기준, 430px 폭)
-    // 핀 중심 y = 90+55 = 145, 카드 높이=52 → top = 145-26 = 119
-    // 핀 중심 x=215, 반지름=55, 카드폭=52, 간격=10 → left/right = 98
-    final iconCardTop = 119.0 * scale;
-    const iconCardHOffset = 98.0; // design-space left/right
-
-    return SizedBox(
-      width: double.infinity,
-      height: 370 * scale,
-      child: Stack(
-        alignment: Alignment.topCenter,
-        children: [
-          // 배경 글로우
+          // 아이콘
+          if (svgPath.isNotEmpty)
+            SvgPicture.asset(
+              svgPath,
+              width: size * 0.50,
+              height: size * 0.50,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            ),
+          // 체크 배지
           Positioned(
-            top: 40 * scale,
+            bottom: 1,
+            right: 1,
             child: Container(
-              width: 240 * scale, height: 240 * scale,
+              width: 27,
+              height: 27,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [accent.withValues(alpha: 0.28), Colors.transparent],
-                  stops: const [0.0, 1.0],
+                color: accent,
+                border: Border.all(
+                  color: const Color(0xFF080C10),
+                  width: 2.5,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.55),
+                    blurRadius: 8,
+                  ),
+                ],
               ),
+              child: const Icon(Icons.check_rounded, size: 13, color: Colors.white),
             ),
           ),
-          // 물결 — 핀 바텀(90+110=200pt) 아래부터 펼쳐짐
-          Positioned(top: 207 * scale, child: ripple(180, 44, 0.50)),
-          Positioned(top: 225 * scale, child: ripple(240, 58, 0.30)),
-          Positioned(top: 247 * scale, child: ripple(310, 72, 0.16)),
-          Positioned(top: 269 * scale, child: ripple(380, 86, 0.08)),
-          // 별 파티클 (핀 주변)
-          Positioned(top: 60 * scale,  left: 45 * scale,  child: dot(6, Colors.white, 0.80)),
-          Positioned(top: 75 * scale,  right: 50 * scale, child: dot(4, Colors.white, 0.60)),
-          Positioned(top: 220 * scale, left: 35 * scale,  child: dot(4, Colors.white, 0.45)),
-          Positioned(top: 185 * scale, right: 30 * scale, child: dot(5, Colors.white, 0.70)),
-          Positioned(top: 125 * scale, left: 28 * scale,  child: dot(3, accent, 0.75)),
-          Positioned(top: 110 * scale, right: 25 * scale, child: dot(3, accent, 0.65)),
-          // ── 중앙 핀 마커 ──
-          Positioned(
-            top: pinTop * scale,
-            child: SizedBox(
-              width: pinSize, height: pinSize,
-              child: Stack(alignment: Alignment.center, children: [
-                // 글로우
-                Container(
-                  width: pinSize, height: pinSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: accent.withValues(alpha: 0.55), blurRadius: 36 * scale, spreadRadius: 2 * scale),
-                    ],
-                  ),
-                ),
-                // 그라디언트 테두리
-                ShaderMask(
-                  shaderCallback: (r) => LinearGradient(
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
-                    colors: [lighter, darker],
-                  ).createShader(r),
-                  child: Container(
-                    width: pinSize, height: pinSize,
-                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                  ),
-                ),
-                // 바디
-                Container(
-                  width: pinSize - 6 * scale, height: pinSize - 6 * scale,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: bodyColor),
-                ),
-                // 상단 하이라이트
-                Positioned(
-                  top: pinR * 0.20, left: pinR * 0.58,
-                  child: Container(
-                    width: pinR * 0.70, height: pinR * 0.34,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(99),
-                      color: Colors.white.withValues(alpha: 0.14),
-                    ),
-                  ),
-                ),
-                // 핀 SVG 아이콘
-                if (categorySvgPath.isNotEmpty)
-                  SvgPicture.asset(
-                    categorySvgPath,
-                    width: pinR * 1.15,
-                    height: pinR * 1.15,
-                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                  ),
-              ]),
-            ),
-          ),
-          // ── 감정 아이콘 (좌측, 핀 중앙 수평) ──
-          if (emotionSvg != null)
-            Positioned(
-              top: iconCardTop,
-              left: iconCardHOffset * scale,
-              child: iconCard(
-                child: SvgPicture.asset(
-                  emotionSvg,
-                  width: 24 * scale, height: 24 * scale,
-                  colorFilter: ColorFilter.mode(accent, BlendMode.srcIn),
-                ),
-              ),
-            ),
-          // ── 국기 (우측, 해외일 때만) ──
-          if (flagSvg != null)
-            Positioned(
-              top: iconCardTop,
-              right: iconCardHOffset * scale,
-              child: iconCard(
-                child: SvgPicture.asset(
-                  flagSvg,
-                  width: 28 * scale, height: 28 * scale,
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 }
 
-// ─── 컨텍스트 칩 ────────────────────────────────────────────────────────
+// ─── 정보 컨텐츠 ────────────────────────────────────────────────────────────────
 
-class _ContextChip extends StatelessWidget {
+class _InfoContent extends StatelessWidget {
+  final Color accent;
+  final String categoryName;
   final String? locationLabel;
   final String svgPath;
-  final String categoryName;
+  final String pinTitle;
+  final String? emotion;
+  final String? countryCode;
 
-  const _ContextChip({
+  const _InfoContent({
+    required this.accent,
+    required this.categoryName,
     required this.locationLabel,
     required this.svgPath,
-    required this.categoryName,
+    required this.pinTitle,
+    required this.emotion,
+    required this.countryCode,
   });
 
   @override
@@ -429,50 +588,123 @@ class _ContextChip extends StatelessWidget {
     final label = (loc != null && loc.isNotEmpty)
         ? '$loc · $categoryName'
         : categoryName;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppOverlays.w08,
-        borderRadius: BorderRadius.circular(AppTokens.radiusPill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.location_on_rounded,
-            size: 12,
-            color: Color(0xFFA78BFA),
-          ),
-          const SizedBox(width: 6),
-          if (svgPath.isNotEmpty) ...[
-            SvgPicture.asset(
-              svgPath,
-              width: 14,
-              height: 14,
-              colorFilter: const ColorFilter.mode(AppOverlays.w80, BlendMode.srcIn),
-            ),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            label,
+    final emotionSvg = AppConstants.emotionSvgPath(emotion);
+    final flagSvg = (countryCode != null && countryCode != 'KR')
+        ? AppConstants.flagSvgPath(countryCode)
+        : null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // 메인 타이틀
+        RichText(
+          textAlign: TextAlign.center,
+          text: TextSpan(
             style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppOverlays.w80,
-              fontFamily: AppTokens.fontBody,
+              fontSize: 34,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              height: 1.20,
+              fontFamily: AppTokens.fontDisplay,
+              letterSpacing: -0.5,
+            ),
+            children: const [
+              TextSpan(text: '기억이\n'),
+              TextSpan(
+                text: '심어졌어요',
+                style: TextStyle(fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        // 위치 + 카테고리 칩
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTokens.radiusPill),
+            color: Colors.white.withValues(alpha: 0.07),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
             ),
           ),
-        ],
-      ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.location_on_rounded, size: 12, color: accent),
+              const SizedBox(width: 5),
+              if (svgPath.isNotEmpty) ...[
+                SvgPicture.asset(
+                  svgPath,
+                  width: 12,
+                  height: 12,
+                  colorFilter: ColorFilter.mode(
+                    Colors.white.withValues(alpha: 0.70),
+                    BlendMode.srcIn,
+                  ),
+                ),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.80),
+                  fontFamily: AppTokens.fontBody,
+                ),
+              ),
+              // 감정 / 국기 인라인
+              if (emotionSvg != null) ...[
+                const SizedBox(width: 6),
+                Container(width: 1, height: 10, color: Colors.white.withValues(alpha: 0.15)),
+                const SizedBox(width: 6),
+                SvgPicture.asset(
+                  emotionSvg,
+                  width: 12,
+                  height: 12,
+                  colorFilter: ColorFilter.mode(
+                    accent.withValues(alpha: 0.85),
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ],
+              if (flagSvg != null) ...[
+                const SizedBox(width: 6),
+                SvgPicture.asset(flagSvg, width: 16, height: 16),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // 핀 제목
+        Text(
+          '"$pinTitle"',
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w400,
+            color: Colors.white.withValues(alpha: 0.42),
+            fontFamily: AppTokens.fontDisplay,
+            height: 1.5,
+          ),
+        ),
+      ],
     );
   }
 }
 
-// ─── 주 액션 버튼 ───────────────────────────────────────────────────────
+// ─── 버튼 ───────────────────────────────────────────────────────────────────────
 
 class _PrimaryButton extends StatelessWidget {
+  final Color accent;
   final VoidCallback onTap;
-  const _PrimaryButton({required this.onTap});
+  const _PrimaryButton({required this.accent, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -482,25 +714,33 @@ class _PrimaryButton extends StatelessWidget {
         width: double.infinity,
         height: 56,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFA78BFA), Color(0xFF7C3AED)],
-          ),
+          color: accent,
           borderRadius: BorderRadius.circular(AppTokens.radiusButton),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.map_rounded, size: 18, color: Colors.white),
-            SizedBox(width: 8),
-            Text(
+          children: [
+            Icon(
+              Icons.map_rounded,
+              size: 18,
+              color: Colors.white.withValues(alpha: 0.90),
+            ),
+            const SizedBox(width: 8),
+            const Text(
               '지도에서 보기',
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 color: Colors.white,
                 fontFamily: AppTokens.fontDisplay,
+                letterSpacing: -0.2,
               ),
             ),
           ],

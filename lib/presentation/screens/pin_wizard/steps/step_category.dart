@@ -369,13 +369,18 @@ class _PinPreview extends StatelessWidget {
               color: innerColor,
             ),
           ),
-          // icon
+          // icon — 내부 색상 밝기에 따라 자동 보정
           if (svgPath.isNotEmpty)
             SvgPicture.asset(
               svgPath,
               width: 18,
               height: 18,
-              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+              colorFilter: ColorFilter.mode(
+                innerColor.computeLuminance() > 0.4
+                    ? const Color(0xFF1A1A2E)
+                    : Colors.white,
+                BlendMode.srcIn,
+              ),
             ),
         ],
       ),

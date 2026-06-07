@@ -47,6 +47,21 @@ class MeetingState {
       activeMeeting?.status == MeetingStatus.approaching ||
       activeMeeting?.status == MeetingStatus.meeting;
 
+  // 내 현재 위치 → 목적지까지 직선 거리 (m). GPS 수신 전 또는 미팅 없으면 null.
+  double? get distanceToTargetMeters {
+    final m = activeMeeting;
+    if (m == null || myLat == null || myLng == null) return null;
+    const r = 6371000.0;
+    final phi1 = myLat! * math.pi / 180;
+    final phi2 = m.targetLat * math.pi / 180;
+    final dPhi = (m.targetLat - myLat!) * math.pi / 180;
+    final dLam = (m.targetLng - myLng!) * math.pi / 180;
+    final sinDPhi = math.sin(dPhi / 2);
+    final sinDLam = math.sin(dLam / 2);
+    final a = sinDPhi * sinDPhi + math.cos(phi1) * math.cos(phi2) * sinDLam * sinDLam;
+    return 2 * r * math.asin(math.sqrt(a));
+  }
+
   MeetingState copyWith({
     Meeting? activeMeeting,
     bool? isLoading,
@@ -92,7 +107,7 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
     super.dispose();
   }
 
-  // 30초 쓰로틀로 Mapbox Directions API 호출
+  // 30초 쓰로틀로 Mapbox Directions API 호출 (모든 이동 수단)
   Future<void> _refreshEta() async {
     final now = DateTime.now();
     if (_lastEtaFetch != null &&
@@ -105,15 +120,17 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
     if (meeting == null) return;
     if (s.myLat == null || s.myLng == null) return;
 
-    // 대중교통 → 거리 기반 fallback (API 미지원)
-    if (meeting.transitMode == TransitMode.transit) return;
+    final toLat = meeting.targetLat;
+    final toLng = meeting.targetLng;
 
-    final profile = meeting.transitMode == TransitMode.driving
-        ? 'driving-traffic'
-        : 'walking';
-
-    final toLat = s.friendLat ?? meeting.targetLat;
-    final toLng = s.friendLng ?? meeting.targetLng;
+    // transit: Mapbox는 대중교통 라우팅 미지원 →
+    //   driving-traffic 프로필로 실제 도로 거리/시간을 받아
+    //   대중교통 평균 속도(25 km/h) 기준으로 환산
+    final profile = switch (meeting.transitMode) {
+      TransitMode.driving => 'driving-traffic',
+      TransitMode.walking => 'walking',
+      TransitMode.transit => 'driving-traffic', // 도로 거리 기반 transit 추정용
+    };
 
     try {
       _lastEtaFetch = now;
@@ -129,7 +146,16 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final routes = data['routes'] as List?;
       if (routes == null || routes.isEmpty) return;
-      final seconds = (routes.first['duration'] as num).toInt();
+
+      final int seconds;
+      if (meeting.transitMode == TransitMode.transit) {
+        // 도로 거리(m)를 대중교통 평균 속도(25 km/h ≈ 6.94 m/s)로 나눠 환산
+        final distanceM = (routes.first['distance'] as num).toDouble();
+        seconds = (distanceM / 6.94).ceil();
+      } else {
+        seconds = (routes.first['duration'] as num).toInt();
+      }
+
       if (mounted) state = state.copyWith(etaSeconds: seconds);
     } catch (_) {}
   }
@@ -138,11 +164,19 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
     state = state.copyWith(isLoading: true);
     var meeting = await _repo.getActiveMeeting();
 
-    // 약속 날짜가 도래했는데 아직 upcoming 상태면 자동으로 approaching 전환
-    if (meeting != null && meeting.status == MeetingStatus.upcoming) {
+    if (meeting != null) {
       final now = DateTime.now();
-      final diff = now.difference(meeting.scheduledAt);
-      if (diff.inMinutes >= -30) {
+      final age = now.difference(meeting.scheduledAt);
+
+      // 약속 시간 3시간 이상 경과 → 자동 완료 처리
+      if (age.inHours >= 3) {
+        await _repo.updateStatus(meeting.id, MeetingStatus.completed);
+        state = state.copyWith(isLoading: false, clearMeeting: true);
+        return;
+      }
+
+      // upcoming 상태에서 약속 시간 30분 전 도래 → approaching 전환
+      if (meeting.status == MeetingStatus.upcoming && age.inMinutes >= -30) {
         await _repo.updateStatus(meeting.id, MeetingStatus.approaching);
         meeting = meeting.copyWith(status: MeetingStatus.approaching);
       }
@@ -280,6 +314,15 @@ class MeetingNotifier extends StateNotifier<MeetingState> {
       return;
     }
 
+    // 스트림 첫 이벤트 전까지 lastKnownPosition으로 즉시 seeding — ETA 즉시 표시
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null && mounted && state.myLat == null) {
+        state = state.copyWith(myLat: last.latitude, myLng: last.longitude);
+        _refreshEta();
+      }
+    } catch (_) {}
+
     // Stream my GPS
     _gpsSub?.cancel();
     _gpsSub = Geolocator.getPositionStream(
@@ -329,4 +372,8 @@ final meetingRepositoryProvider = Provider<MeetingRepository>(
 final meetingProvider =
     StateNotifierProvider<MeetingNotifier, MeetingState>((ref) {
   return MeetingNotifier(ref.watch(meetingRepositoryProvider));
+});
+
+final allMeetingsProvider = FutureProvider<List<Meeting>>((ref) {
+  return ref.watch(meetingRepositoryProvider).getAllMeetings();
 });

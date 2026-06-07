@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,29 +25,79 @@ class FCMService {
   final _messaging = FirebaseMessaging.instance;
 
   Future<void> init() async {
+    debugPrint('[FCM] init start, apps=${Firebase.apps.length}');
+    // Firebase 앱이 초기화되지 않은 경우 FCM 전체를 건너뜀
+    if (Firebase.apps.isEmpty) {
+      debugPrint('[FCM] Firebase not initialized — skipping FCM init');
+      return;
+    }
+    debugPrint('[FCM] registering background handler');
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    debugPrint('[FCM] bg handler done, requesting permission');
 
-    final settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    NotificationSettings? settings;
+    try {
+      settings = await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (e) {
+      debugPrint('[FCM] requestPermission error: $e');
+      return;
+    }
+    debugPrint('[FCM] permission status: ${settings.authorizationStatus}');
     if (settings.authorizationStatus != AuthorizationStatus.authorized &&
         settings.authorizationStatus != AuthorizationStatus.provisional) {
       _setEnabled(false);
       return;
     }
 
+    // iOS: 포그라운드에서 시스템 소리/뱃지 허용, alert는 커스텀 배너로 처리
+    try {
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: false,
+        badge: true,
+        sound: true,
+      ).timeout(const Duration(seconds: 3));
+    } catch (_) {}
+
     FirebaseMessaging.onMessage.listen(_handleForeground);
     FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
 
-    await _uploadToken();
+    // 앱 완전 종료 상태에서 알림 탭으로 실행된 경우
+    // iOS 시뮬레이터에서 hang 방지용 타임아웃
+    try {
+      final initialMessage = await _messaging
+          .getInitialMessage()
+          .timeout(const Duration(seconds: 3));
+      if (initialMessage != null) {
+        Future.delayed(const Duration(milliseconds: 800), () {
+          _navigate(initialMessage.data);
+        });
+      }
+    } catch (_) {}
+
+    unawaited(_uploadToken());
     _messaging.onTokenRefresh.listen(_saveToken);
+
+    // 로그인 타이밍이 FCM init보다 늦을 경우 토큰 재업로드
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedIn) {
+        _uploadToken();
+      }
+    });
   }
 
   Future<void> _uploadToken() async {
-    final token = await _messaging.getToken();
-    if (token != null) await _saveToken(token);
+    try {
+      final token = await _messaging
+          .getToken()
+          .timeout(const Duration(seconds: 6), onTimeout: () => null);
+      if (token != null) await _saveToken(token);
+    } catch (_) {
+      // iOS 시뮬레이터에서 APNs 토큰 미발급 시 무시 (실기기에서는 정상 동작)
+    }
   }
 
   Future<void> _saveToken(String token) async {
@@ -63,8 +114,10 @@ class FCMService {
   // ── 포그라운드 인앱 배너 ────────────────────────────────────────────────────
 
   void _handleForeground(RemoteMessage message) {
-    final title = message.notification?.title;
-    final body = message.notification?.body;
+    final title = message.notification?.title
+        ?? message.data['title'] as String?;
+    final body = message.notification?.body
+        ?? message.data['body'] as String?;
     if (title == null && body == null) return;
     _showInAppBanner(title: title ?? '', body: body ?? '', data: message.data);
   }
@@ -113,6 +166,7 @@ class FCMService {
         // 지도 탭(0)으로 이동 — 약속 오버레이가 거기 있음
         _switchTab(0);
       case 'friend_request':
+      case 'friend_accepted':
       case 'friend':
         _switchTab(3); // 프로필 → 친구 진입
         Future.microtask(() {
@@ -121,6 +175,7 @@ class FCMService {
           );
         });
       case 'pin':
+      case 'pin_tag':
         _switchTab(0);
       default:
         // 타입 없으면 지도 탭으로

@@ -1049,14 +1049,16 @@ class _PinCategoryItem extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: unlocked
-                      ? (context.isDark
-                            ? const Color(0xFF2D2D2D)
-                            : Colors.white)
-                      : Colors.white.withValues(alpha: 0.60),
+                      ? Colors.white
+                      : (context.isDark
+                            ? const Color(0xFF2A2A2A)
+                            : Colors.white.withValues(alpha: 0.60)),
                   border: Border.all(
                     color: unlocked
                         ? context.primaryColor
-                        : Colors.black.withValues(alpha: 0.10),
+                        : (context.isDark
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.10)),
                     width: unlocked ? 2.5 : 1.2,
                   ),
                   boxShadow: unlocked
@@ -1095,25 +1097,31 @@ class _PinCategoryItem extends StatelessWidget {
                     width: 20,
                     height: 20,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: context.isDark
+                          ? const Color(0xFF3A3A3A)
+                          : Colors.white,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Colors.black.withValues(alpha: 0.08),
+                        color: context.isDark
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : Colors.black.withValues(alpha: 0.08),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.10),
+                          color: Colors.black.withValues(alpha: 0.15),
                           blurRadius: 4,
                           offset: const Offset(0, 1),
                         ),
                       ],
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Icon(
                         Icons.lock_rounded,
                         size: 11,
-                        color: Color(0xFFAAAAAA),
+                        color: context.isDark
+                            ? const Color(0xFF888888)
+                            : const Color(0xFFAAAAAA),
                       ),
                     ),
                   ),
@@ -1379,7 +1387,7 @@ class _TitleCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             titleDef.subtitle,
-            style: const TextStyle(fontSize: 13, color: AppColors.grey),
+            style: TextStyle(fontSize: 13, color: context.subLabelColor),
           ),
           if (nextTitle != null && toNext > 0) ...[
             const SizedBox(height: 16),
@@ -1388,10 +1396,10 @@ class _TitleCard extends StatelessWidget {
               children: [
                 Text(
                   '다음 칭호까지 여행 $toNext회',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.grey,
+                    color: context.subLabelColor,
                   ),
                 ),
                 Text(
@@ -1453,10 +1461,10 @@ class _SectionHeader extends StatelessWidget {
                 ),
                 child: Text(
                   '$count',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.greyLight,
+                    color: context.subLabelColor,
                   ),
                 ),
               ),
@@ -1686,7 +1694,7 @@ class _BadgeCard extends StatelessWidget {
       onTap: onTap,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
-        opacity: earned ? 1.0 : 0.45,
+        opacity: earned ? 1.0 : (context.isDark ? 0.60 : 0.45),
         child: Container(
           decoration: BoxDecoration(
             color: context.cardBg,
@@ -1791,7 +1799,7 @@ class _BadgeDetailSheet extends StatelessWidget {
           Text(
             badge.description,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 14, color: AppColors.grey),
+            style: TextStyle(fontSize: 14, color: context.subLabelColor),
           ),
           const SizedBox(height: 20),
           Container(

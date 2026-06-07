@@ -12,6 +12,9 @@ final pinRepositoryProvider = Provider<PinRepository>((ref) => PinRepository());
 // 지구본 모드 여부 — map_screen ↔ main_shell 공유
 final globeModeProvider = StateProvider<bool>((ref) => false);
 
+// 방금 생성된 핀 — wizard → map_screen 새싹 애니메이션 트리거
+final newlyCreatedPinProvider = StateProvider<PinModel?>((ref) => null);
+
 final pinsProvider = StateNotifierProvider<PinsNotifier, List<PinModel>>((ref) {
   return PinsNotifier(ref.read(pinRepositoryProvider));
 });
@@ -138,7 +141,7 @@ class FilterNotifier extends StateNotifier<FilterState> {
 final triggerCreatePinProvider = StateProvider<bool>((ref) => false);
 
 // 지도 스타일
-enum MapStyleOption { auto, standard, satellite, outdoors, dark, light, streets }
+enum MapStyleOption { auto, standard, satellite, outdoors, dark, light, streets, buildings3d, navDay, navNight, satellitePure, standardSatellite }
 
 final mapStyleProvider = StateProvider<MapStyleOption>(
   (ref) => MapStyleOption.standard,

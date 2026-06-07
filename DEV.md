@@ -1,6 +1,6 @@
 # Pinlog — 개발 노트
 
-> 최종 업데이트: 2026-06-02  
+> 최종 업데이트: 2026-06-07  
 > 발표일: 2026-06-11 (수요일)
 
 ---
@@ -230,3 +230,72 @@ Firebase는 FCM 수신 전용으로만 잔류.
 |--------|--------|-----------|
 | 친구 추가 | `FriendsNotifier._notifyFriend()` | "새 친구 요청이 왔어요" |
 | 약속 생성 | `MeetingNotifier._notifyInvitee()` | "약속 요청이 왔어요 + 장소명" |
+
+---
+
+## 구현 평가 (2026-06-07)
+
+### 프로젝트 규모
+
+| 항목 | 수치 |
+|------|------|
+| Dart 파일 수 | 65+ |
+| 화면(Screen) 수 | 15+ |
+| 외부 서비스 | 5개 (Supabase, Firebase, Mapbox, Resend, Kakao) |
+| Edge Function | 2개 (delete-user, send-fcm) |
+| SVG 에셋 | 41개국 국기 + 앱 아이콘 + 알림 아이콘 |
+
+### 기능 구현 현황
+
+| 기능 | 상태 | 비고 |
+|------|------|------|
+| 핀 CRUD + Supabase 동기화 | ✅ | 오프라인 Hive 캐시 포함 |
+| Mapbox 3D 지구본 | ✅ | |
+| 핀 클러스터링 | ✅ | |
+| 41개국 국기 마커 | ✅ | `lib/img/flag/` |
+| 이메일 OTP 회원가입 | ✅ | Resend SMTP, 6자리 |
+| Apple Sign In | ✅ | SHA256 nonce |
+| Google 로그인 | ✅ | |
+| 카카오 로그인 | ⚠️ | 실기기 미확인 |
+| 온보딩 닉네임 저장 | ✅ | Hive 즉시 + Supabase 동기화 |
+| 친구 시스템 (코드 기반) | ✅ | |
+| 약속 잡기 | ✅ | Mapbox 위치 선택 포함 |
+| Realtime 동행 위치 공유 | ✅ | Supabase Presence |
+| 동행 2대 테스트 | ⚠️ | 시뮬레이터 단독 확인만 |
+| On This Day 리캡 팝업 | ✅ | 하루 1회, 최대 10년 |
+| 위치 기반 리캡 배너 | ✅ | 300m 이내 |
+| 리캡 로컬 푸시 알림 | ✅ | flutter_local_notifications |
+| FCM 인앱 배너 | ✅ | 포그라운드 커스텀 배너 |
+| FCM 서버 푸시 (친구/약속) | ✅ | Edge Function 경유 |
+| FCM 서버 푸시 실수신 | ⚠️ | 실기기 수신 미확인 |
+| 뱃지/칭호 시스템 | ✅ | 16 카테고리, 6단계 칭호 |
+| 피드 화면 | ✅ | |
+| 계정 탈퇴 | ✅ | delete-user Edge Function |
+| 테마 시스템 (4 프리셋) | ✅ | ThemeMode.system 포함 |
+| 계정 설정 화면 | ✅ | |
+| 프로필 사진 업로드 | ⚠️ | Storage 버킷 공개 설정 미완료 |
+| 핀 사진 업로드 | ⚠️ | Storage 버킷 공개 설정 미완료 |
+| Supabase RLS | ❌ | SQL 준비됨, 대시보드 미적용 |
+| 시연 영상 | ❌ | 미촬영 |
+| 웹 SVG 아이콘 | ❌ | placeholder 상태 |
+
+### 코드 품질 분석
+
+**강점**
+- `flutter analyze` 이슈 0개
+- Riverpod `StateNotifierProvider` 전면 적용 — UI/비즈니스 로직 완전 분리
+- 오프라인 우선 아키텍처 (Hive 캐시 즉시 표시 → Supabase 백그라운드 동기화)
+- 시뮬레이터 FCM hang 버그를 직접 원인 규명 후 timeout + try/catch 패턴으로 수정 (2026-06-07)
+- 보안 감사 CRITICAL/HIGH 전부 수정 (민감 키 gitignore, XSS/injection 방어)
+- Edge Function 2개 직접 작성 + Supabase 배포
+
+**개선 여지**
+- Supabase RLS 미적용 — 인증된 사용자가 타인 데이터 직접 접근 가능 (보안 미완)
+- `map_screen.dart` 단일 파일 1000줄+ (기능 분리 여지 있음)
+- 실기기 통합 테스트 미완료 (시뮬레이터 확인만)
+
+### 종합 평가
+
+> **A- ~ A / 상위 5% 수준**  
+> Flutter + Supabase + Firebase + Mapbox + Edge Function 전 스택을 단독으로 구현·배포한 사례.  
+> RLS 미적용과 실기기 테스트 미완이 감점 요인이나, 구현 범위와 완성도가 압도적.

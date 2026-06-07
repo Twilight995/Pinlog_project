@@ -174,7 +174,8 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
     }
   }
 
-  /// users 테이블에 레코드가 없으면 신규 사용자
+  /// users 테이블에 레코드가 없으면 신규 사용자.
+  /// 조회 실패 시 true 반환 — 온보딩을 띄우는 것이 건너뛰는 것보다 안전.
   Future<bool> _checkIsNewUser(String uid) async {
     try {
       final res = await Supabase.instance.client
@@ -184,7 +185,7 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
           .maybeSingle();
       return res == null;
     } catch (_) {
-      return false;
+      return true;
     }
   }
 
@@ -729,6 +730,26 @@ class PinlogAuthNotifier extends StateNotifier<PinlogAuthState> {
     } catch (_) {
       return '비밀번호 변경에 실패했습니다.';
     }
+  }
+
+  /// 현재 비밀번호 확인 후 변경. null = 성공
+  Future<String?> verifyAndChangePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final email = Supabase.instance.client.auth.currentUser?.email;
+    if (email == null) return '계정 정보를 불러올 수 없습니다.';
+    try {
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: currentPassword,
+      );
+    } on AuthException {
+      return '현재 비밀번호가 올바르지 않습니다.';
+    } catch (_) {
+      return '비밀번호 확인 중 오류가 발생했습니다.';
+    }
+    return changePassword(newPassword);
   }
 
   Future<void> signOut() async {

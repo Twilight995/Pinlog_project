@@ -3,11 +3,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../data/models/meeting.dart';
 
 // ─── 전체 미팅 오버레이 ────────────────────────────────────────────────────────
 // Map screen Stack에 Positioned.fill로 삽입.
-// myScreenPos / friendScreenPos: mapboxMap.pixelForCoordinate()로 얻은 화면 좌표.
+// myScreenPos / friendScreenPos / targetScreenPos: mapboxMap.pixelForCoordinate()로 얻은 화면 좌표.
 
 class MeetingMapOverlay extends StatelessWidget {
   final Offset myScreenPos;
@@ -31,6 +32,8 @@ class MeetingMapOverlay extends StatelessWidget {
       (myScreenPos.dx + friendScreenPos.dx) / 2,
       (myScreenPos.dy + friendScreenPos.dy) / 2,
     );
+    final primary = context.primaryColor;
+    final primaryLight = context.primaryLightColor;
 
     return IgnorePointer(
       child: Stack(
@@ -41,14 +44,16 @@ class MeetingMapOverlay extends StatelessWidget {
               painter: _RubberBandPainter(
                 from: myScreenPos,
                 to: friendScreenPos,
+                primary: primary,
+                primaryLight: primaryLight,
               ),
             ),
           ),
 
           // ── 중간 ETA 배지 ──────────────────────────────────────────────────
           Positioned(
-            left: mid.dx - 80,
-            top: mid.dy - 22,
+            left: mid.dx - 60,
+            top: mid.dy - 18,
             child: _EtaBadge(
               meeting: meeting,
               distanceMeters: distanceMeters,
@@ -83,8 +88,15 @@ class MeetingMapOverlay extends StatelessWidget {
 class _RubberBandPainter extends CustomPainter {
   final Offset from;
   final Offset to;
+  final Color primary;
+  final Color primaryLight;
 
-  const _RubberBandPainter({required this.from, required this.to});
+  const _RubberBandPainter({
+    required this.from,
+    required this.to,
+    required this.primary,
+    required this.primaryLight,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -92,7 +104,7 @@ class _RubberBandPainter extends CustomPainter {
     canvas.drawLine(
       from, to,
       Paint()
-        ..color = const Color(0xFFD946EF).withValues(alpha: 0.18)
+        ..color = primary.withValues(alpha: 0.18)
         ..strokeWidth = 22
         ..strokeCap = StrokeCap.round
         ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 12),
@@ -101,7 +113,7 @@ class _RubberBandPainter extends CustomPainter {
     canvas.drawLine(
       from, to,
       Paint()
-        ..color = const Color(0xFFA78BFA).withValues(alpha: 0.45)
+        ..color = primaryLight.withValues(alpha: 0.45)
         ..strokeWidth = 7
         ..strokeCap = StrokeCap.round
         ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 3),
@@ -109,7 +121,7 @@ class _RubberBandPainter extends CustomPainter {
     // 코어 라인 (그라디언트)
     final shader = ui.Gradient.linear(
       from, to,
-      [const Color(0xFFA78BFA), const Color(0xFFD946EF)],
+      [primaryLight, primary],
     );
     canvas.drawLine(
       from, to,
@@ -123,7 +135,7 @@ class _RubberBandPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RubberBandPainter old) =>
-      old.from != from || old.to != to;
+      old.from != from || old.to != to || old.primary != primary;
 }
 
 // ─── ETA 배지 ─────────────────────────────────────────────────────────────────
@@ -162,19 +174,22 @@ class _EtaBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eta = _etaMinutes;
+    final primary = context.primaryColor;
+    final primaryLight = context.primaryLightColor;
+
     return Container(
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A0D30).withValues(alpha: 0.88),
+        color: context.cardBg.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(15),
         border: Border.all(
-          color: const Color(0xFFA78BFA).withValues(alpha: 0.55),
+          color: primaryLight.withValues(alpha: 0.55),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFD946EF).withValues(alpha: 0.30),
+            color: primary.withValues(alpha: 0.30),
             blurRadius: 12,
             spreadRadius: 1,
           ),
@@ -187,29 +202,26 @@ class _EtaBadge extends StatelessWidget {
             meeting.transitSvgPath,
             width: 14,
             height: 14,
-            colorFilter: const ColorFilter.mode(
-              Color(0xFFC084FC),
-              BlendMode.srcIn,
-            ),
+            colorFilter: ColorFilter.mode(primaryLight, BlendMode.srcIn),
           ),
           const SizedBox(width: 5),
           if (eta != null)
             Text(
               '약 $eta분',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Colors.white,
+                color: context.labelColor,
                 fontFamily: 'Pretendard',
               ),
             )
           else if (_distLabel.isNotEmpty)
             Text(
               _distLabel,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Colors.white,
+                color: context.labelColor,
                 fontFamily: 'Pretendard',
               ),
             ),
@@ -229,21 +241,24 @@ class _LiquidGlassAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.primaryColor;
+    final primaryLight = context.primaryLightColor;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Outer purple glow ring
+        // Outer glow ring
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFD946EF).withValues(alpha: 0.45),
+                color: primary.withValues(alpha: 0.45),
                 blurRadius: 22,
                 spreadRadius: 3,
               ),
               BoxShadow(
-                color: const Color(0xFF8B5CF6).withValues(alpha: 0.25),
+                color: primary.withValues(alpha: 0.20),
                 blurRadius: 40,
                 spreadRadius: 6,
               ),
@@ -257,10 +272,12 @@ class _LiquidGlassAvatar extends StatelessWidget {
                 width: 88,
                 height: 96,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.07),
+                  color: context.isDark
+                      ? Colors.white.withValues(alpha: 0.07)
+                      : Colors.black.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: const Color(0xFFA78BFA).withValues(alpha: 0.65),
+                    color: primaryLight.withValues(alpha: 0.65),
                     width: 1.5,
                   ),
                 ),
@@ -278,9 +295,9 @@ class _LiquidGlassAvatar extends StatelessWidget {
                                 fit: BoxFit.cover,
                                 width: double.infinity,
                                 errorBuilder: (_, _, _) =>
-                                    _placeholderPhoto(),
+                                    _placeholderPhoto(context),
                               )
-                            : _placeholderPhoto(),
+                            : _placeholderPhoto(context),
                       ),
                     ),
                     // Nickname
@@ -288,7 +305,7 @@ class _LiquidGlassAvatar extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1A0D30).withValues(alpha: 0.72),
+                        color: context.cardBg.withValues(alpha: 0.85),
                         borderRadius: const BorderRadius.vertical(
                           bottom: Radius.circular(14.5),
                         ),
@@ -296,10 +313,10 @@ class _LiquidGlassAvatar extends StatelessWidget {
                       child: Text(
                         nickname,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: context.labelColor,
                           fontFamily: 'Pretendard',
                         ),
                       ),
@@ -315,8 +332,8 @@ class _LiquidGlassAvatar extends StatelessWidget {
           width: 6,
           height: 6,
           margin: const EdgeInsets.only(top: 3),
-          decoration: const BoxDecoration(
-            color: Color(0xFFD946EF),
+          decoration: BoxDecoration(
+            color: primary,
             shape: BoxShape.circle,
           ),
         ),
@@ -324,9 +341,13 @@ class _LiquidGlassAvatar extends StatelessWidget {
     );
   }
 
-  Widget _placeholderPhoto() => Container(
-        color: const Color(0xFF2D1B5E),
-        child: const Icon(Icons.person_rounded, color: Colors.white38, size: 36),
+  Widget _placeholderPhoto(BuildContext context) => Container(
+        color: context.iconBgColor,
+        child: Icon(
+          Icons.person_rounded,
+          color: context.subLabelColor,
+          size: 36,
+        ),
       );
 }
 
@@ -337,6 +358,9 @@ class _MyAvatarMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.primaryColor;
+    final primaryLight = context.primaryLightColor;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -345,22 +369,22 @@ class _MyAvatarMarker extends StatelessWidget {
           height: 48,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: const Color(0xFF1A0D30),
+            color: context.cardBg,
             border: Border.all(
-              color: const Color(0xFFA78BFA),
+              color: primaryLight,
               width: 2.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF8B5CF6).withValues(alpha: 0.50),
+                color: primary.withValues(alpha: 0.50),
                 blurRadius: 14,
                 spreadRadius: 2,
               ),
             ],
           ),
-          child: const Icon(
+          child: Icon(
             Icons.person_rounded,
-            color: Colors.white70,
+            color: context.labelColor.withValues(alpha: 0.70),
             size: 26,
           ),
         ),
@@ -368,8 +392,8 @@ class _MyAvatarMarker extends StatelessWidget {
           width: 6,
           height: 6,
           margin: const EdgeInsets.only(top: 3),
-          decoration: const BoxDecoration(
-            color: Color(0xFF8B5CF6),
+          decoration: BoxDecoration(
+            color: primary,
             shape: BoxShape.circle,
           ),
         ),

@@ -15,7 +15,7 @@ class MeetingRepository {
 
   String get _myUid => _db.auth.currentUser?.id ?? '';
 
-  // ── Supabase CRUD ──────────────────────────────────────────────────────────
+  // ── Supabase CRUD ─────────────────────────────────────────────────────────
 
   Future<Meeting?> getActiveMeeting() async {
     final uid = _myUid;
@@ -87,6 +87,46 @@ class MeetingRepository {
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', id);
     } catch (_) {}
+  }
+
+  Future<List<Meeting>> getAllMeetings() async {
+    final uid = _myUid;
+    if (uid.isEmpty) return [];
+    try {
+      final rows = await _db
+          .from('scheduled_meetings')
+          .select()
+          .or('meet_uid.eq.$uid,invitee_uid.eq.$uid')
+          .order('scheduled_at', ascending: false);
+      if (rows.isEmpty) return [];
+
+      final meetings = rows.map((r) => Meeting.fromJson(r)).toList();
+
+      // Batch-fetch unique friend UIDs
+      final friendUids = meetings
+          .map((m) => m.meetUid == uid ? m.inviteeUid : m.meetUid)
+          .toSet()
+          .toList();
+      final userRows = await _db
+          .from('users')
+          .select('uid,nickname,avatar_url')
+          .inFilter('uid', friendUids);
+      final userMap = {
+        for (final u in userRows) u['uid'] as String: u,
+      };
+
+      return meetings.map((m) {
+        final friendUid = m.meetUid == uid ? m.inviteeUid : m.meetUid;
+        final u = userMap[friendUid];
+        if (u == null) return m;
+        return m.copyWith(
+          friendNickname: u['nickname'] as String?,
+          friendAvatarUrl: u['avatar_url'] as String?,
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> updateTransitMode(String id, TransitMode mode) async {

@@ -7,7 +7,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../application/services/recap_service.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../../data/models/pin_model.dart';
 
 // ─── On This Day 팝업 ─────────────────────────────────────────────────────────
 
@@ -419,12 +418,12 @@ class _CategoryIcon extends StatelessWidget {
 // ─── 위치 기반 배너 ───────────────────────────────────────────────────────────
 
 class RecapLocationBanner extends StatefulWidget {
-  final PinModel pin;
+  final ProximityMemory memory;
   final VoidCallback onDismiss;
 
   const RecapLocationBanner({
     super.key,
-    required this.pin,
+    required this.memory,
     required this.onDismiss,
   });
 
@@ -467,12 +466,13 @@ class _RecapLocationBannerState extends State<RecapLocationBanner>
 
   @override
   Widget build(BuildContext context) {
-    final svgPath = AppConstants.pinShapeSvgs[widget.pin.pinShape] ?? '';
-    final yearsAgo = RecapService.yearsAgo(widget.pin.createdAt);
+    final pin = widget.memory.pin;
+    final svgPath = AppConstants.pinShapeSvgs[pin.pinShape] ?? '';
     final bottomPad = MediaQuery.of(context).padding.bottom;
+    final hasCompanion = pin.companions.isNotEmpty;
 
     return Positioned(
-      bottom: bottomPad + 90, // 네비 바 위
+      bottom: bottomPad + 90,
       left: 16,
       right: 16,
       child: SlideTransition(
@@ -514,7 +514,7 @@ class _RecapLocationBannerState extends State<RecapLocationBanner>
               ),
               child: Row(
                 children: [
-                  // 아이콘
+                  // 아이콘 — 동행자 있으면 사람 아이콘
                   Container(
                     width: 46,
                     height: 46,
@@ -523,21 +523,27 @@ class _RecapLocationBannerState extends State<RecapLocationBanner>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
-                      child: svgPath.isNotEmpty
-                          ? SvgPicture.asset(
-                              svgPath,
-                              width: 24,
-                              height: 24,
-                              colorFilter: const ColorFilter.mode(
-                                Color(0xFF9B8BFF),
-                                BlendMode.srcIn,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.location_on_rounded,
+                      child: hasCompanion
+                          ? const Icon(
+                              Icons.people_rounded,
                               size: 24,
                               color: Color(0xFF9B8BFF),
-                            ),
+                            )
+                          : svgPath.isNotEmpty
+                              ? SvgPicture.asset(
+                                  svgPath,
+                                  width: 24,
+                                  height: 24,
+                                  colorFilter: const ColorFilter.mode(
+                                    Color(0xFF9B8BFF),
+                                    BlendMode.srcIn,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.location_on_rounded,
+                                  size: 24,
+                                  color: Color(0xFF9B8BFF),
+                                ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -549,32 +555,29 @@ class _RecapLocationBannerState extends State<RecapLocationBanner>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '$yearsAgo년 전 이 근처에서',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFFAA9EFF),
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          widget.pin.title.isEmpty
-                              ? '기록된 장소'
-                              : widget.pin.title,
+                          widget.memory.bannerBody,
                           style: const TextStyle(
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
                             letterSpacing: -0.2,
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.pin.emotion,
-                          style: const TextStyle(fontSize: 12),
-                        ),
+                        if (pin.title.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            pin.title,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.55),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ],
                     ),
                   ),

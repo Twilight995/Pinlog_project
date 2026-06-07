@@ -7,6 +7,7 @@ import '../../../application/providers/friends_provider.dart';
 import '../../../application/services/social_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
+import 'friend_profile_screen.dart';
 
 class FriendsScreen extends ConsumerWidget {
   const FriendsScreen({super.key});
@@ -18,6 +19,7 @@ class FriendsScreen extends ConsumerWidget {
     final supaFriends = firestoreFriends.valueOrNull;
     final friends = (supaFriends != null && supaFriends.isNotEmpty) ? supaFriends : localFriends;
     final myCode = ref.watch(myFriendCodeProvider);
+    final pendingRequests = ref.watch(pendingRequestsProvider).valueOrNull ?? [];
     final topPad = MediaQuery.of(context).padding.top;
 
     return Scaffold(
@@ -84,6 +86,16 @@ class FriendsScreen extends ConsumerWidget {
             ),
           ),
 
+          // ── 친구 신청 섹션 (수신된 신청 있을 때만 표시) ──────────────────────
+          if (pendingRequests.isNotEmpty)
+            SliverToBoxAdapter(
+              child: _PendingRequestsSection(
+                requests: pendingRequests,
+                onAccept: (req) => _acceptRequest(req, context, ref),
+                onReject: (req) => _rejectRequest(req, ref),
+              ),
+            ),
+
           // ── 친구 목록 헤더 ──────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: Padding(
@@ -122,7 +134,7 @@ class FriendsScreen extends ConsumerWidget {
                   _DemoFriendsButton(friends: friends),
                   const SizedBox(width: 8),
                   GestureDetector(
-                    onTap: () => _showAddFriendSheet(context, ref),
+                    onTap: () => _showAddFriendSheet(context),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
@@ -194,14 +206,52 @@ class FriendsScreen extends ConsumerWidget {
     );
   }
 
-  void _showAddFriendSheet(BuildContext context, WidgetRef ref) {
+  void _showAddFriendSheet(BuildContext context) {
     showAppSheet<void>(
       context,
-      builder: (_) => _AddFriendSheet(
-        onAdd: (code, name, uid) =>
-            ref.read(friendsProvider.notifier).addFriend(code, name, uid: uid),
-      ),
+      builder: (_) => const _AddFriendSheet(),
     );
+  }
+
+  Future<void> _acceptRequest(
+    FriendRequest req,
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final err = await ref.read(socialServiceProvider).acceptFriendRequest(
+      req.id, req.fromUid, req.fromNickname, req.fromFriendCode,
+    );
+    if (!context.mounted) return;
+    if (err == null) {
+      // 로컬 Hive에도 즉시 반영 (스트림 업데이트 전까지 UI 일관성)
+      await ref.read(friendsProvider.notifier).addFriend(
+        req.fromFriendCode, req.fromNickname, uid: req.fromUid, notify: false,
+      );
+      // Supabase 스트림 강제 재조회 — supaFriends가 이미 있을 때도 새 친구 즉시 반영
+      ref.invalidate(friendsStreamProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${req.fromNickname} 님의 신청을 수락했어요'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        backgroundColor: const Color(0xFF10B981),
+        duration: const Duration(seconds: 2),
+      ));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(err),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        backgroundColor: AppColors.danger,
+        duration: const Duration(seconds: 2),
+      ));
+    }
+  }
+
+  Future<void> _rejectRequest(FriendRequest req, WidgetRef ref) async {
+    await ref.read(socialServiceProvider).rejectFriendRequest(req.id);
   }
 }
 
@@ -486,7 +536,13 @@ class _FriendCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final color = _intimacyColor(friend.intimacyLevel);
-    return Container(
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => FriendProfileScreen(friend: friend),
+        ),
+      ),
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: context.cardBg,
@@ -558,6 +614,7 @@ class _FriendCard extends ConsumerWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -689,7 +746,7 @@ class _FriendCard extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      builder: (sheetCtx) => Container(
         margin: const EdgeInsets.all(12),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -713,7 +770,7 @@ class _FriendCard extends ConsumerWidget {
               children: [
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                    onTap: () => Navigator.pop(sheetCtx),
                     child: Container(
                       height: 48,
                       decoration: BoxDecoration(
@@ -736,7 +793,7 @@ class _FriendCard extends ConsumerWidget {
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       onRemove();
                     },
                     child: Container(
@@ -769,8 +826,7 @@ class _FriendCard extends ConsumerWidget {
 // ─── 친구 추가 시트 ──────────────────────────────────────────────────────────
 
 class _AddFriendSheet extends ConsumerStatefulWidget {
-  final void Function(String code, String name, String uid) onAdd;
-  const _AddFriendSheet({required this.onAdd});
+  const _AddFriendSheet();
 
   @override
   ConsumerState<_AddFriendSheet> createState() => _AddFriendSheetState();
@@ -796,8 +852,8 @@ class _AddFriendSheetState extends ConsumerState<_AddFriendSheet> {
     }
     setState(() => _loading = true);
     try {
-      final firestore = ref.read(socialServiceProvider);
-      final userData = await firestore.getUserByCode(code);
+      final service = ref.read(socialServiceProvider);
+      final userData = await service.getUserByCode(code);
       if (!mounted) return;
       if (userData == null) {
         _showError('존재하지 않는 코드예요. 다시 확인해주세요.');
@@ -806,13 +862,29 @@ class _AddFriendSheetState extends ConsumerState<_AddFriendSheet> {
       }
       final targetUid = userData['uid'] as String? ?? '';
       final targetFriendCode = userData['friend_code'] as String? ?? code;
-      final firestoreName = userData['nickname'] as String? ?? '';
+      final serverName = userData['nickname'] as String? ?? '';
       final localName = _nameCtrl.text.trim().isNotEmpty
           ? _nameCtrl.text.trim()
-          : (firestoreName.isNotEmpty ? firestoreName : code);
-      await firestore.addFriendship(targetUid, localName, targetFriendCode);
-      widget.onAdd(code, localName, targetUid);
-      if (mounted) Navigator.pop(context);
+          : (serverName.isNotEmpty ? serverName : code);
+
+      final err = await service.sendFriendRequest(targetUid, localName, targetFriendCode);
+      if (!mounted) return;
+      if (err != null) {
+        _showError(err);
+        setState(() => _loading = false);
+        return;
+      }
+      // 신청 완료
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context);
+      messenger.showSnackBar(SnackBar(
+        content: Text('$localName 님에게 친구 신청을 보냈어요!'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        backgroundColor: const Color(0xFF10B981),
+        duration: const Duration(seconds: 2),
+      ));
     } catch (_) {
       if (!mounted) return;
       _showError('연결 중 오류가 발생했어요. 다시 시도해주세요.');
@@ -984,7 +1056,7 @@ class _AddFriendSheetState extends ConsumerState<_AddFriendSheet> {
                           ),
                         )
                       : const Text(
-                          '친구 추가하기',
+                          '신청 보내기',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -992,6 +1064,193 @@ class _AddFriendSheetState extends ConsumerState<_AddFriendSheet> {
                           ),
                         ),
                 ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 친구 신청 섹션 ───────────────────────────────────────────────────────────
+
+class _PendingRequestsSection extends StatelessWidget {
+  final List<FriendRequest> requests;
+  final void Function(FriendRequest) onAccept;
+  final void Function(FriendRequest) onReject;
+
+  const _PendingRequestsSection({
+    required this.requests,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF6B6B),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '친구 신청',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: context.labelColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6B6B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${requests.length}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFFF6B6B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...requests.map((req) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _PendingRequestCard(
+              request: req,
+              onAccept: () => onAccept(req),
+              onReject: () => onReject(req),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingRequestCard extends StatelessWidget {
+  final FriendRequest request;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  const _PendingRequestCard({
+    required this.request,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: context.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFFF6B6B).withValues(alpha: 0.25),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF6B6B).withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                request.fromNickname.isNotEmpty
+                    ? request.fromNickname[0].toUpperCase()
+                    : '?',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFFF6B6B),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.fromNickname,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: context.labelColor,
+                  ),
+                ),
+                Text(
+                  '코드: ${request.fromFriendCode}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: context.subLabelColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 거절 버튼
+          GestureDetector(
+            onTap: onReject,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: context.fieldBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: context.subLabelColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 수락 버튼
+          GestureDetector(
+            onTap: onAccept,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                size: 18,
+                color: Color(0xFF10B981),
               ),
             ),
           ),

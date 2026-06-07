@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
@@ -26,8 +25,9 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/sheet_utils.dart';
 import '../legal/terms_screen.dart';
+import 'account_settings_screen.dart';
 import '../../../application/providers/nav_provider.dart';
-import '../social/shared_map_screen.dart';
+import '../schedule/schedule_screen.dart';
 import '../social/mock_social_preview.dart';
 import '../../widgets/map/pin_detail_sheet.dart';
 
@@ -231,9 +231,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
-                    child: _AccountSection(
-                      onChangePassword: () => _showChangePasswordDialog(context),
-                    ),
+                    child: const _AccountSection(),
                   ),
                 ),
 
@@ -363,74 +361,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (confirmed != true) return;
     await ref.read(pinlogAuthProvider.notifier).deleteAccount();
     _navigateToSignIn();
-  }
-
-  Future<void> _showChangePasswordDialog(BuildContext ctx) async {
-    final pwCtrl = TextEditingController();
-    final confirmCtrl = TextEditingController();
-    String? errorMsg;
-
-    await showDialog<void>(
-      context: ctx,
-      builder: (dCtx) => StatefulBuilder(
-        builder: (dCtx, setS) => AlertDialog(
-          title: const Text('비밀번호 변경'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: pwCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: '새 비밀번호 (8자 이상)'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: confirmCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: '새 비밀번호 확인'),
-              ),
-              if (errorMsg != null) ...[
-                const SizedBox(height: 8),
-                Text(errorMsg!, style: const TextStyle(color: Color(0xFFFF3B30), fontSize: 13)),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dCtx).pop(),
-              child: const Text('취소'),
-            ),
-            TextButton(
-              onPressed: () async {
-                final pw = pwCtrl.text.trim();
-                final confirm = confirmCtrl.text.trim();
-                if (pw.length < 8) {
-                  setS(() => errorMsg = '비밀번호는 8자 이상이어야 합니다.');
-                  return;
-                }
-                if (pw != confirm) {
-                  setS(() => errorMsg = '비밀번호가 일치하지 않습니다.');
-                  return;
-                }
-                final err = await ref.read(pinlogAuthProvider.notifier).changePassword(pw);
-                if (!dCtx.mounted) return;
-                if (err != null) {
-                  setS(() => errorMsg = err);
-                } else {
-                  Navigator.of(dCtx).pop();
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    const SnackBar(content: Text('비밀번호가 변경되었습니다.')),
-                  );
-                }
-              },
-              child: const Text('변경'),
-            ),
-          ],
-        ),
-      ),
-    );
-    pwCtrl.dispose();
-    confirmCtrl.dispose();
   }
 
   Future<void> _showImportDialog(BuildContext ctx) async {
@@ -2295,16 +2225,6 @@ class _SettingsSection extends StatelessWidget {
               ),
               _RowSeparator(),
               _TapRow(
-                icon: Icons.share_location_rounded,
-                iconColor: themeColor,
-                label: '동행',
-                subtitle: '친구와 실시간 위치 공유',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const SharedMapScreen()),
-                ),
-              ),
-              _RowSeparator(),
-              _TapRow(
                 icon: Icons.description_outlined,
                 iconColor: themeColor,
                 label: '이용약관',
@@ -2487,19 +2407,14 @@ class _RowSeparator extends StatelessWidget {
 
 // ── 계정 정보 섹션 ─────────────────────────────────────────────────────────────
 class _AccountSection extends StatelessWidget {
-  final VoidCallback onChangePassword;
-  const _AccountSection({required this.onChangePassword});
+  const _AccountSection();
 
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
-    final email = user?.email;
-    final provider = user?.appMetadata['provider'] as String?;
-    final isEmailUser = provider == 'email';
-    final themeColor = context.primaryColor;
-    final mutedColor = context.labelColor.withValues(alpha: 0.38);
+    if (user == null) return const SizedBox.shrink();
 
-    if (email == null) return const SizedBox.shrink();
+    final themeColor = context.primaryColor;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2516,35 +2431,29 @@ class _AccountSection extends StatelessWidget {
           child: Column(
             children: [
               _TapRow(
-                icon: Icons.email_outlined,
-                iconColor: mutedColor,
-                label: '이메일',
-                subtitle: email,
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: email));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('이메일이 복사됐어요'),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                },
-                isLast: !isEmailUser,
-              ),
-              if (isEmailUser) ...[
-                _RowSeparator(),
-                _TapRow(
-                  icon: Icons.lock_outline_rounded,
-                  iconColor: themeColor,
-                  label: '비밀번호 변경',
-                  subtitle: '새 비밀번호로 변경',
-                  onTap: onChangePassword,
-                  isLast: true,
+                icon: Icons.manage_accounts_outlined,
+                iconColor: themeColor,
+                label: '계정 설정',
+                subtitle: '이메일 확인 · 비밀번호 변경',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AccountSettingsScreen(),
+                  ),
                 ),
-              ],
+              ),
+              _RowSeparator(),
+              _TapRow(
+                icon: Icons.calendar_today_outlined,
+                iconColor: themeColor,
+                label: '일정',
+                subtitle: '친구와의 핀 약속 내역',
+                isLast: true,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ScheduleScreen(),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

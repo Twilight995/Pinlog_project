@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../application/providers/friends_provider.dart';
 import '../../../application/providers/pin_provider.dart';
+import '../../../application/services/social_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/pin_model.dart';
 import '../../widgets/cosmic/blob.dart';
@@ -78,8 +80,38 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     super.dispose();
   }
 
+  Future<void> _acceptRequest(FriendRequest req) async {
+    final err = await ref.read(socialServiceProvider).acceptFriendRequest(
+      req.id, req.fromUid, req.fromNickname, req.fromFriendCode,
+    );
+    if (!mounted) return;
+    if (err == null) {
+      await ref.read(friendsProvider.notifier).addFriend(
+        req.fromFriendCode, req.fromNickname, uid: req.fromUid, notify: false,
+      );
+      // Supabase 스트림 강제 재조회 — 수락한 기기에서도 친구 목록 즉시 반영
+      ref.invalidate(friendsStreamProvider);
+      ref.invalidate(pendingRequestsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${req.fromNickname} 님의 신청을 수락했어요'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        backgroundColor: Theme.of(context).primaryColor,
+        duration: const Duration(seconds: 2),
+      ));
+    }
+  }
+
+  Future<void> _rejectRequest(FriendRequest req) async {
+    await ref.read(socialServiceProvider).rejectFriendRequest(req.id);
+    ref.invalidate(pendingRequestsProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pendingRequests = ref.watch(pendingRequestsProvider).valueOrNull ?? [];
     final pins = ref.watch(pinsProvider);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -309,6 +341,16 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               controller: _sc,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
+          // 알림 섹션
+          if (pendingRequests.isNotEmpty)
+            SliverToBoxAdapter(
+              child: _NotificationSection(
+                requests: pendingRequests,
+                onAccept: _acceptRequest,
+                onReject: _rejectRequest,
+              ),
+            ),
+
           // 통계 카드 행
           SliverToBoxAdapter(
             child: Padding(
@@ -1475,6 +1517,203 @@ class _SearchResultItem extends StatelessWidget {
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+// ─── 알림 섹션 ─────────────────────────────────────────────────────────────────
+
+class _NotificationSection extends StatelessWidget {
+  final List<FriendRequest> requests;
+  final Future<void> Function(FriendRequest) onAccept;
+  final Future<void> Function(FriendRequest) onReject;
+
+  const _NotificationSection({
+    required this.requests,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEF4444),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '알림',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: context.labelColor,
+                  fontFamily: AppTokens.fontDisplay,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${requests.length}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFEF4444),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...requests.map((req) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _NotificationCard(
+              req: req,
+              onAccept: () => onAccept(req),
+              onReject: () => onReject(req),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotificationCard extends StatelessWidget {
+  final FriendRequest req;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  const _NotificationCard({
+    required this.req,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = req.fromNickname.isNotEmpty
+        ? req.fromNickname[0].toUpperCase()
+        : '?';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+          width: 1,
+        ),
+        boxShadow: context.glassCardShadow,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: context.primaryColor.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                initial,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: context.primaryColor,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  req.fromNickname,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: context.labelColor,
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '친구 신청을 보냈어요',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.subLabelColor,
+                    fontFamily: AppTokens.fontBody,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              onReject();
+            },
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: context.cardBg,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: context.glassBorder,
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: context.subLabelColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              onAccept();
+            },
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: context.primaryColor,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

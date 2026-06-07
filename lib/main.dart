@@ -48,6 +48,14 @@ void main() async {
       }
       return false;
     }
+    // Xcode 26 / iOS 26 시뮬레이터: objective_c.framework 미포함 런타임
+    // → FCM 네이티브 바인딩 로드 실패. 앱 크래시 방지용 무시 (실기기에서는 발생 안 함)
+    final errStr = error.toString();
+    if (errStr.contains('DOBJC_initializeApi') ||
+        errStr.contains('objective_c.framework')) {
+      debugPrint('[WARN] objective_c unavailable on this simulator — FCM disabled');
+      return true;
+    }
     return false;
   };
 
@@ -85,8 +93,8 @@ void main() async {
   // Calling it at startup would create a users row with default values,
   // which causes _checkIsNewUser() to skip onboarding for new accounts.
 
-  // FCM 알림 초기화
-  try { await FCMService.instance.init(); } catch (_) {}
+  // FCM 알림 초기화 — 시뮬레이터에서 APNs 토큰 미발급 시 hang 방지
+  try { await FCMService.instance.init().timeout(const Duration(seconds: 5)); } catch (_) {}
 
   // 로컬 푸시 알림 초기화
   try { await NotificationService.instance.init(); } catch (_) {}
@@ -104,6 +112,7 @@ void main() async {
     );
   }
   // 지도 레이블 언어를 한국어로 고정 (맵 인스턴스 생성 전에 설정해야 적용됨)
+  // ignore: experimental_member_use
   MapboxMapsOptions.setLanguage('ko');
 
   // 스플래시 오버레이 아래에 올바른 화면을 미리 준비하기 위해 앱 시작 전 auth 확인

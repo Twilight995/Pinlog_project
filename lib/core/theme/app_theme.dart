@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class AppColors {
   // ── 브랜드 액센트 (변경 없음) ─────────────────────────────────────────────
@@ -366,6 +367,11 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarBrightness: Brightness.light,       // iOS: 밝은 배경 → 검정 아이콘
+          statusBarIconBrightness: Brightness.dark,    // Android: 검정 아이콘
+        ),
         titleTextStyle: TextStyle(
           color: Color(0xFF0A0A0A),
           fontSize: 17,
@@ -394,6 +400,11 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarBrightness: Brightness.dark,        // iOS: 어두운 배경 → 흰색 아이콘
+          statusBarIconBrightness: Brightness.light,   // Android: 흰색 아이콘
+        ),
         titleTextStyle: TextStyle(
           color: Colors.white,
           fontSize: 17,

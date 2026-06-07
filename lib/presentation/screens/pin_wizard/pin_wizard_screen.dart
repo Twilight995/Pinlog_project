@@ -5,13 +5,12 @@ import 'package:latlong2/latlong.dart';
 import 'package:uuid/uuid.dart';
 import 'package:geocoding/geocoding.dart';
 
+import '../../../application/providers/friends_provider.dart';
 import '../../../application/providers/pin_provider.dart';
 import '../../../application/providers/theme_provider.dart';
 import '../../../application/services/storage_service.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../widgets/cosmic/cosmic_background.dart';
 import '../../../data/models/pin_model.dart';
-import 'pin_success_screen.dart';
 import 'steps/step_category.dart';
 import 'steps/step_companions.dart';
 import 'steps/step_emotion_intensity.dart';
@@ -109,36 +108,14 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
     );
 
     await ref.read(pinsProvider.notifier).add(pin);
+    if (pin.taggedFriendCodes.isNotEmpty) {
+      ref.read(friendsProvider.notifier).notifyPinTag(pin.taggedFriendCodes, pin.title);
+    }
 
     if (!mounted) return;
-    final svgPath = AppConstants.pinShapeSvgs[pin.pinShape] ?? '';
-    final name = AppConstants.pinShapeNames[pin.pinShape] ?? pin.pinShape;
-    Navigator.of(context).pushReplacement(
-      PageRouteBuilder<void>(
-        pageBuilder: (ctx, a1, a2) => PinSuccessScreen(
-          pinTitle: pin.title,
-          locationLabel: _data.locationName,
-          categorySvgPath: svgPath,
-          categoryName: name,
-          emotion: pin.emotion,
-          countryCode: pin.countryCode,
-        ),
-        transitionDuration: const Duration(milliseconds: 500),
-        reverseTransitionDuration: const Duration(milliseconds: 320),
-        transitionsBuilder: (ctx, anim, a2, child) => FadeTransition(
-          opacity: CurvedAnimation(
-            parent: anim,
-            curve: const Interval(0.0, 0.65, curve: Curves.easeOut),
-          ),
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.93, end: 1.0).animate(
-              CurvedAnimation(parent: anim, curve: Curves.easeOutQuart),
-            ),
-            child: child,
-          ),
-        ),
-      ),
-    );
+    // 지도로 복귀 후 해당 위치에 새싹 애니메이션 트리거
+    ref.read(newlyCreatedPinProvider.notifier).state = pin;
+    Navigator.of(context).pop();
   }
 
   Widget _buildStepTransition(Widget child, Animation<double> animation) {
@@ -229,7 +206,8 @@ class _PinWizardScreenState extends ConsumerState<PinWizardScreen> {
   @override
   Widget build(BuildContext context) {
     final themeColor = ref.watch(themePresetProvider).primary;
-    final style = WizardStyle.fromTheme(themeColor);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final style = WizardStyle.fromTheme(themeColor, isDark: isDark);
 
     return WizardStyleScope(
       style: style,

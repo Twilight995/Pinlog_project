@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:http/http.dart' as http;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,13 +27,15 @@ import '../../widgets/common/glass_button.dart';
 import '../../widgets/map/cluster_anim_overlay.dart';
 import '../../widgets/map/donghaeng_panel.dart';
 import '../../widgets/meeting/meeting_bottom_sheet.dart';
-import '../../widgets/meeting/meeting_overlay.dart';
 import '../../widgets/map/filter_sheet.dart';
 import '../../widgets/meeting/meeting_create_sheet.dart';
 import '../../widgets/recap/recap_popup.dart';
 import '../pin_wizard/pin_wizard_screen.dart';
 import '../../widgets/map/pin_detail_sheet.dart';
 import '../social/friends_screen.dart';
+import '../../../application/services/social_service.dart';
+import '../../../application/providers/friends_provider.dart';
+import '../../../application/services/map_controls_prefs.dart';
 
 // ─── 지구본 모드 상수 ──────────────────────────────────────────────────────────
 const double _kGlobeEnterZoom = 4.5;
@@ -312,6 +316,120 @@ Future<Uint8List> _buildDonghaengMarkerBitmap({
   final picture = recorder.endRecording();
   final image = await picture.toImage(pxSize.toInt(), pxSize.toInt());
   final bd = await image.toByteData(format: ui.ImageByteFormat.png);
+  return bd!.buffer.asUint8List();
+}
+
+// 약속 장소 핀 — 친구 프로필 사진 (없으면 이니셜) + 테마 테두리
+Future<Uint8List> _buildMeetingTargetBitmap({
+  required Color themeColor,
+  required double pixelRatio,
+  String? avatarUrl,
+  String? nickname,
+}) async {
+  const logicalSize = 80.0;
+  final pxSize = (logicalSize * pixelRatio).roundToDouble();
+  final cx = pxSize / 2;
+  final cy = pxSize / 2;
+  final r = pixelRatio * 17.0;
+  final gradientRect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
+  final borderColors = _pinBorderGradient(themeColor);
+
+  // 프로필 사진 네트워크 로드 시도
+  ui.Image? avatarImg;
+  if (avatarUrl != null && avatarUrl.isNotEmpty) {
+    try {
+      final res = await http
+          .get(Uri.parse(avatarUrl))
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final codec = await ui.instantiateImageCodec(
+          res.bodyBytes,
+          targetWidth: (r * 2).ceil(),
+          targetHeight: (r * 2).ceil(),
+        );
+        avatarImg = (await codec.getNextFrame()).image;
+      }
+    } catch (_) {}
+  }
+
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder, Rect.fromLTWH(0, 0, pxSize, pxSize));
+  canvas.clipPath(Path()..addOval(Rect.fromLTWH(0, 0, pxSize, pxSize)));
+
+  // 글로우
+  canvas.drawCircle(
+    Offset(cx, cy),
+    r + pixelRatio * 3,
+    Paint()
+      ..color = themeColor.withValues(alpha: 0.32)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 7),
+  );
+  // 드롭 섀도우
+  canvas.drawCircle(
+    Offset(cx, cy + pixelRatio * 2.5),
+    r,
+    Paint()
+      ..color = const Color(0x50000000)
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, pixelRatio * 5),
+  );
+
+  if (avatarImg != null) {
+    // 프로필 사진을 원형 clip으로 채움
+    canvas.save();
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: Offset(cx, cy), radius: r)),
+    );
+    paintImage(
+      canvas: canvas,
+      rect: Rect.fromCircle(center: Offset(cx, cy), radius: r),
+      image: avatarImg,
+      fit: BoxFit.cover,
+    );
+    canvas.restore();
+    avatarImg.dispose();
+  } else {
+    // 이니셜 fallback
+    final bodyColor = _pinBodyColor(themeColor);
+    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = bodyColor);
+    final initial =
+        nickname != null && nickname.isNotEmpty ? nickname[0] : '?';
+    final tp = TextPainter(
+      text: TextSpan(
+        text: initial,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: pixelRatio * 15,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
+  }
+
+  // 테마 그라디언트 테두리
+  final borderW = 2.8 * pixelRatio;
+  canvas.drawCircle(
+    Offset(cx, cy),
+    r - borderW / 2,
+    Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = borderW
+      ..shader = LinearGradient(
+        colors: borderColors,
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(gradientRect),
+  );
+  // 상단 하이라이트
+  canvas.drawOval(
+    Rect.fromLTWH(cx - r * 0.38, cy - r * 0.82, r * 0.76, r * 0.38),
+    Paint()..color = const Color(0x22FFFFFF),
+  );
+
+  final picture = recorder.endRecording();
+  final img = await picture.toImage(pxSize.toInt(), pxSize.toInt());
+  final bd = await img.toByteData(format: ui.ImageByteFormat.png);
   return bd!.buffer.asUint8List();
 }
 
@@ -664,16 +782,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   bool _controlsExpanded = true;
   bool get _routeMode => _routePins != null;
 
-  // 약속 시스템 — 화면 좌표 (pixelForCoordinate 결과)
-  Offset _meetingMyScreenPos = Offset.zero;
-  Offset _meetingFriendScreenPos = Offset.zero;
-  Timer? _meetingPosTimer;
+  Timer? _meetingPosTimer; // 이전 화면 좌표 업데이트용 — 현재 미사용 (네이티브 어노테이션으로 대체)
+
+  // 약속 — 네이티브 Mapbox 어노테이션 (지도와 함께 부드럽게 이동)
+  PointAnnotationManager? _meetingTargetManager;
+  PointAnnotation? _meetingTargetAnnotation;
+  PolylineAnnotationManager? _meetingLineManager;
+  PolylineAnnotation? _meetingLineAnnotation;
+  PointAnnotationManager? _meetingFriendManager;
+  PointAnnotation? _meetingFriendAnnotation;
+
+  // 약속 UI 가시성: 앱 시작 시 배너만 노출. 탭 시 바텀시트 슬라이드 업.
+  bool _meetingBottomSheetVisible = false;
+
+  // 새싹 애니메이션 오버레이
+  PinModel? _sproutPin;
+  Offset? _sproutPos;
 
   // Recap 위치 기반 — GPS 스트림 + 이미 보여준 핀 ID 세트
   // StreamSubscription<dynamic>: geolocator.Position 은 mapbox Position 과 충돌하므로 dynamic 사용
   StreamSubscription<dynamic>? _recapGpsSub;
   final Set<String> _shownRecapIds = {};
-  PinModel? _recapBannerPin;
+  ProximityMemory? _recapBannerPin;
 
   // 롱프레스 핀 생성 — 1.5초 홀드 후 PinWizardScreen 진입
   Timer? _longPressTimer;
@@ -709,36 +839,115 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     super.dispose();
   }
 
-  void _scheduleMeetingPositionUpdate() {
-    _meetingPosTimer?.cancel();
-    _meetingPosTimer = Timer(
-      const Duration(milliseconds: 60),
-      _updateMeetingScreenPositions,
+  Future<void> _syncMeetingTargetPin() async {
+    if (_meetingTargetManager == null) return;
+    final ms = ref.read(meetingProvider);
+    final meeting = ms.activeMeeting;
+
+    if (meeting == null ||
+        !ms.isApproaching ||
+        meeting.id.startsWith('demo_')) {
+      if (_meetingTargetAnnotation != null) {
+        await _meetingTargetManager!.delete(_meetingTargetAnnotation!);
+        _meetingTargetAnnotation = null;
+      }
+      return;
+    }
+
+    if (_meetingTargetAnnotation != null) return; // 이미 생성됨
+
+    final pixelRatio =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    final themeColor = ref.read(themePresetProvider).primary;
+    final bytes = await _buildMeetingTargetBitmap(
+      themeColor: themeColor,
+      pixelRatio: pixelRatio,
+      avatarUrl: meeting.friendAvatarUrl,
+      nickname: meeting.friendNickname,
     );
+
+    if (!mounted) return;
+    final annotation = await _meetingTargetManager!.create(
+      PointAnnotationOptions(
+        geometry: Point(
+          coordinates: Position(meeting.targetLng, meeting.targetLat),
+        ),
+        image: bytes,
+        iconSize: 1.1,
+        iconAnchor: IconAnchor.CENTER,
+      ),
+    );
+    _meetingTargetAnnotation = annotation;
   }
 
-  Future<void> _updateMeetingScreenPositions() async {
-    if (_mapboxMap == null) return;
-    final meetingState = ref.read(meetingProvider);
-    if (!meetingState.isApproaching) return;
-    if (meetingState.activeMeeting?.id.startsWith('demo_') == true) return;
+  Future<void> _syncMeetingNativeOverlay() async {
+    if (_meetingLineManager == null || _meetingFriendManager == null) return;
+    final ms = ref.read(meetingProvider);
 
-    final myLat = meetingState.myLat;
-    final myLng = meetingState.myLng;
-    final friendLat = meetingState.friendLat;
-    final friendLng = meetingState.friendLng;
-
-    if (myLat != null && myLng != null) {
-      final sc = await _mapboxMap!
-          .pixelForCoordinate(Point(coordinates: Position(myLng, myLat)));
-      if (mounted) setState(() => _meetingMyScreenPos = Offset(sc.x, sc.y));
-    }
-    if (friendLat != null && friendLng != null) {
-      final sc = await _mapboxMap!.pixelForCoordinate(
-          Point(coordinates: Position(friendLng, friendLat)));
-      if (mounted) {
-        setState(() => _meetingFriendScreenPos = Offset(sc.x, sc.y));
+    // 비활성이면 기존 어노테이션 제거
+    if (!ms.isApproaching ||
+        ms.activeMeeting == null ||
+        ms.activeMeeting!.id.startsWith('demo_')) {
+      if (_meetingLineAnnotation != null) {
+        await _meetingLineManager!.delete(_meetingLineAnnotation!);
+        _meetingLineAnnotation = null;
       }
+      if (_meetingFriendAnnotation != null) {
+        await _meetingFriendManager!.delete(_meetingFriendAnnotation!);
+        _meetingFriendAnnotation = null;
+      }
+      return;
+    }
+
+    final meeting = ms.activeMeeting!;
+    final myLat = ms.myLat;
+    final myLng = ms.myLng;
+    final friendLat = ms.friendLat;
+    final friendLng = ms.friendLng;
+    final themeColor = ref.read(themePresetProvider).primary;
+
+    // 고무줄 선 — 내 위치와 친구 위치 모두 있을 때만
+    if (myLat != null && myLng != null && friendLat != null && friendLng != null) {
+      if (_meetingLineAnnotation != null) {
+        await _meetingLineManager!.delete(_meetingLineAnnotation!);
+        _meetingLineAnnotation = null;
+      }
+      _meetingLineAnnotation = await _meetingLineManager!.create(
+        PolylineAnnotationOptions(
+          geometry: LineString(coordinates: [
+            Position(myLng, myLat),
+            Position(friendLng, friendLat),
+          ]),
+          lineColor: themeColor.toARGB32(),
+          lineWidth: 3.5,
+          lineOpacity: 0.85,
+        ),
+      );
+    }
+
+    // 친구 현재 위치 핀
+    if (friendLat != null && friendLng != null) {
+      if (_meetingFriendAnnotation != null) {
+        await _meetingFriendManager!.delete(_meetingFriendAnnotation!);
+        _meetingFriendAnnotation = null;
+      }
+      final pixelRatio =
+          WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+      final bytes = await _buildMeetingTargetBitmap(
+        themeColor: themeColor,
+        pixelRatio: pixelRatio,
+        avatarUrl: meeting.friendAvatarUrl,
+        nickname: meeting.friendNickname,
+      );
+      if (!mounted) return;
+      _meetingFriendAnnotation = await _meetingFriendManager!.create(
+        PointAnnotationOptions(
+          geometry: Point(coordinates: Position(friendLng, friendLat)),
+          image: bytes,
+          iconSize: 1.0,
+          iconAnchor: IconAnchor.BOTTOM,
+        ),
+      );
     }
   }
 
@@ -1635,6 +1844,59 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
   }
 
+  // ─── 새싹 애니메이션 ───────────────────────────────────────────────────────
+
+  Future<void> _triggerSproutAnimation(PinModel pin) async {
+    final map = _mapboxMap;
+    if (map == null) return;
+
+    // 원래 카메라 상태 저장
+    final origZoom = _zoom;
+    final origLat = _cameraCenterLat;
+    final origLng = _cameraCenterLng;
+
+    // 1단계: 핀 위치로 클로즈업
+    await map.flyTo(
+      CameraOptions(
+        center: Point(coordinates: Position(pin.longitude, pin.latitude)),
+        zoom: 14.5,
+      ),
+      MapAnimationOptions(duration: 800, startDelay: 0),
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (!mounted) return;
+
+    // flyTo 완료 후 정확한 화면 픽셀 좌표 취득
+    final sc = await map.pixelForCoordinate(
+      Point(coordinates: Position(pin.longitude, pin.latitude)),
+    );
+
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _sproutPin = pin;
+      _sproutPos = Offset(sc.x, sc.y);
+    });
+
+    // 2단계: 이펙트 피크 대기
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    if (!mounted) return;
+
+    // 3단계: 줌아웃 — 오버레이 페이드가 이 구간에 겹침
+    // ignore: unawaited_futures
+    map.flyTo(
+      CameraOptions(
+        center: Point(coordinates: Position(origLng, origLat)),
+        zoom: origZoom,
+      ),
+      MapAnimationOptions(duration: 950, startDelay: 0),
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 950));
+    if (mounted) setState(() { _sproutPin = null; _sproutPos = null; });
+  }
+
   // ─── 지도 스타일 변경 ──────────────────────────────────────────────────────
 
   // 시간 기반 자동 스타일 결정: 07:00~18:59 → standard, 19:00~06:59 → dark
@@ -1667,6 +1929,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       MapStyleOption.dark => MapboxStyles.DARK,
       MapStyleOption.light => 'mapbox://styles/mapbox/light-v11',
       MapStyleOption.streets => 'mapbox://styles/mapbox/streets-v12',
+      MapStyleOption.buildings3d => 'mapbox://styles/mapbox/streets-v12',
+      MapStyleOption.navDay => 'mapbox://styles/mapbox/navigation-day-v1',
+      MapStyleOption.navNight => 'mapbox://styles/mapbox/navigation-night-v1',
+      MapStyleOption.satellitePure => 'mapbox://styles/mapbox/satellite-v9',
+      MapStyleOption.standardSatellite => MapboxStyles.STANDARD_SATELLITE,
       MapStyleOption.auto => MapboxStyles.STANDARD, // unreachable
     };
     await _mapboxMap!.style.setStyleURI(uri);
@@ -1682,22 +1949,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   void _onMapTap(MapContentGestureContext ctx) {
     if (_mapboxMap == null || _isGlobeTransitioning) return;
 
-    final lat = ctx.point.coordinates.lat.toDouble();
-    final lng = ctx.point.coordinates.lng.toDouble();
-
     if (_isGlobeMode) {
+      final lat = ctx.point.coordinates.lat.toDouble();
+      final lng = ctx.point.coordinates.lng.toDouble();
       _exitGlobeMode(lat: lat, lng: lng);
-      return;
     }
-
-    if (_zoom < 4) return;
-
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (_) => PinWizardScreen(
-        location: ll.LatLng(lat, lng),
-      ),
-    ));
   }
 
   // ─── 지도 롱프레스 (1.5s) → 핀 생성 ──────────────────────────────────────
@@ -1761,6 +2017,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
   }
 
+  void _showNotificationCenter(BuildContext ctx) {
+    showAppSheet<void>(
+      ctx,
+      builder: (_) => const _NotificationCenterSheet(),
+    );
+  }
+
   void _showLayerSheet(BuildContext ctx, WidgetRef ref) {
     showAppSheet<void>(
       ctx,
@@ -1779,10 +2042,43 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Future<void> _applyKoreanLabels([MapboxMap? map]) async {
     final m = map ?? _mapboxMap;
     if (m == null) return;
-    // Classic 스타일(outdoors, streets-v12)용 — text-field 직접 교체
-    // Standard 스타일은 main.dart의 MapboxMapsOptions.setLanguage('ko') 전역 설정으로 처리됨
     try {
       await m.style.localizeLabels('ko', null);
+    } catch (_) {}
+    // 3D 건물 모드일 때 FillExtrusionLayer 추가
+    if (ref.read(mapStyleProvider) == MapStyleOption.buildings3d) {
+      await _apply3DBuildings(m);
+    }
+  }
+
+  // ─── 3D 건물 익스트루전 레이어 ───────────────────────────────────────────
+
+  Future<void> _apply3DBuildings(MapboxMap m) async {
+    const layerId = 'pinlog-3d-buildings';
+    try { await m.style.removeStyleLayer(layerId); } catch (_) {}
+    try {
+      await m.style.addLayer(FillExtrusionLayer(
+        id: layerId,
+        sourceId: 'composite',
+        sourceLayer: 'building',
+        fillExtrusionOpacity: 0.72,
+        fillExtrusionColor: const Color(0xFFBEC8D8).toARGB32(),
+        fillExtrusionAmbientOcclusionIntensity: 0.35,
+        fillExtrusionAmbientOcclusionRadius: 3.0,
+      ));
+      // 건물 데이터 기반 높이 — 줌 15 이상에서 점진적으로 표시
+      await m.style.setStyleLayerProperty(
+        layerId, 'filter',
+        ['==', ['get', 'extrude'], 'true'],
+      );
+      await m.style.setStyleLayerProperty(
+        layerId, 'fill-extrusion-height',
+        ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'height']],
+      );
+      await m.style.setStyleLayerProperty(
+        layerId, 'fill-extrusion-base',
+        ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'min_height']],
+      );
     } catch (_) {}
   }
 
@@ -1807,8 +2103,22 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ),
     );
 
-    // 거리 스케일바 숨기기
+    // 거리 스케일바 + 나침반 숨기기 (나침반이 상단 버튼과 겹침)
     await mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
+    await mapboxMap.compass.updateSettings(CompassSettings(enabled: false));
+
+    // 제스처 설정: tilt/rotation 동시 사용 시 끊김 제거
+    await mapboxMap.gestures.updateSettings(
+      GesturesSettings(
+        rotateEnabled: true,
+        pitchEnabled: true,
+        simultaneousRotateAndPinchToZoomEnabled: true,
+        increaseRotateThresholdWhenPinchingToZoom: false,
+        increasePinchToZoomThresholdWhenRotating: false,
+        rotateDecelerationEnabled: true,
+        scrollDecelerationEnabled: true,
+      ),
+    );
 
     // Mapbox 기본 위치 표시기 비활성화 (커스텀 blue dot 사용)
     await mapboxMap.location.updateSettings(
@@ -1833,6 +2143,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _locationManager = await mapboxMap.annotations
         .createPointAnnotationManager();
     _donghaengManager = await mapboxMap.annotations
+        .createPointAnnotationManager();
+    _meetingTargetManager = await mapboxMap.annotations
+        .createPointAnnotationManager();
+    _meetingLineManager = await mapboxMap.annotations
+        .createPolylineAnnotationManager();
+    _meetingFriendManager = await mapboxMap.annotations
         .createPointAnnotationManager();
 
     _tapSubscription = _pinManager!.tapEvents(
@@ -1891,6 +2207,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     await _updateMarkers(pins);
     _startCycleTimer();
     _startRecapGpsStream();
+    await _syncMeetingTargetPin();
   }
 
   void _startRecapGpsStream() {
@@ -1920,9 +2237,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
     if (nearby.isEmpty) return;
 
-    final pin = nearby.first;
-    _shownRecapIds.add(pin.id);
-    setState(() => _recapBannerPin = pin);
+    final memory = nearby.first;
+    _shownRecapIds.add(memory.pin.id);
+    setState(() => _recapBannerPin = memory);
   }
 
   // ─── 빌드 ─────────────────────────────────────────────────────────────────
@@ -1930,6 +2247,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final allPins = ref.watch(pinsProvider);
+    final meetingState = ref.watch(meetingProvider);
+    final notifCount = ref.watch(pendingRequestCountProvider);
+    final enabledControls = ref.watch(mapControlsProvider);
+    final meetingSheetActive = _meetingBottomSheetVisible &&
+        meetingState.isApproaching &&
+        meetingState.activeMeeting != null &&
+        !(meetingState.activeMeeting?.id.startsWith('demo_') ?? false);
 
     ref.listen(filteredPinsProvider, (_, pins) {
       _scheduleUpdate(pins);
@@ -1940,6 +2264,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         ref.read(triggerCreatePinProvider.notifier).state = false;
         _createPinAtCurrentLocation();
       }
+    });
+
+    ref.listen(newlyCreatedPinProvider, (_, pin) {
+      if (pin == null) return;
+      ref.read(newlyCreatedPinProvider.notifier).state = null;
+      _triggerSproutAnimation(pin);
     });
 
     ref.listen(mapStyleProvider, (prev, next) {
@@ -1968,14 +2298,29 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
     });
 
-    // 약속 위치 업데이트 → 화면 좌표 재계산
+    // 약속 위치 업데이트 → 네이티브 어노테이션 동기화
     ref.listen(meetingProvider, (prev, next) {
+      // 미팅 ID 변경 시 시트 리셋
+      if (prev?.activeMeeting?.id != next.activeMeeting?.id) {
+        if (mounted) setState(() => _meetingBottomSheetVisible = false);
+      }
+      // approaching 상태 진입 시 바텀시트 자동 오픈
+      if (prev?.isApproaching == false && next.isApproaching) {
+        if (mounted) setState(() => _meetingBottomSheetVisible = true);
+      }
+      // 약속 활성화/비활성화 시 네이티브 타깃 핀 + 오버레이 동기화
+      if (prev?.isApproaching != next.isApproaching ||
+          prev?.activeMeeting?.id != next.activeMeeting?.id) {
+        _syncMeetingTargetPin();
+        _syncMeetingNativeOverlay();
+      }
+      // 내/친구 위치 변경 시 네이티브 오버레이 갱신
       if (next.isApproaching &&
           next.activeMeeting?.id.startsWith('demo_') != true &&
           (prev?.myLat != next.myLat ||
               prev?.friendLat != next.friendLat ||
               prev?.friendLng != next.friendLng)) {
-        _scheduleMeetingPositionUpdate();
+        _syncMeetingNativeOverlay();
       }
     });
 
@@ -1990,6 +2335,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       MapStyleOption.dark => MapboxStyles.DARK,
       MapStyleOption.light => 'mapbox://styles/mapbox/light-v11',
       MapStyleOption.streets => 'mapbox://styles/mapbox/streets-v12',
+      MapStyleOption.buildings3d => 'mapbox://styles/mapbox/streets-v12',
+      MapStyleOption.navDay => 'mapbox://styles/mapbox/navigation-day-v1',
+      MapStyleOption.navNight => 'mapbox://styles/mapbox/navigation-night-v1',
+      MapStyleOption.satellitePure => 'mapbox://styles/mapbox/satellite-v9',
+      MapStyleOption.standardSatellite => MapboxStyles.STANDARD_SATELLITE,
       MapStyleOption.auto => MapboxStyles.STANDARD, // unreachable
     };
 
@@ -1998,7 +2348,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final isDarkStatusBar = _isGlobeMode ||
         _isGlobeTransitioning ||
         effectiveStyle == MapStyleOption.dark ||
-        effectiveStyle == MapStyleOption.satellite;
+        effectiveStyle == MapStyleOption.satellite ||
+        effectiveStyle == MapStyleOption.navNight ||
+        effectiveStyle == MapStyleOption.satellitePure ||
+        effectiveStyle == MapStyleOption.standardSatellite;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: isDarkStatusBar
@@ -2011,12 +2364,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             // ── Mapbox 지도 ───────────────────────────────────────────────
             MapWidget(
               styleUri: styleUri,
-              viewport: CameraViewportState(
-                center: Point(coordinates: Position(_cameraCenterLng, _cameraCenterLat)),
-                zoom: _zoom,
-                pitch: 0,
-                bearing: 0,
-              ),
               onStyleLoadedListener: (_) => _applyKoreanLabels(_mapboxMap),
               onMapCreated: _onMapCreated,
               onCameraChangeListener: (data) {
@@ -2025,13 +2372,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 final center = data.cameraState.center.coordinates;
                 _cameraCenterLat = center.lat.toDouble();
                 _cameraCenterLng = center.lng.toDouble();
-
-                // 약속 화면 좌표 재계산 (카메라 이동 시 마커 위치 동기화)
-                final _ms = ref.read(meetingProvider);
-                if (_ms.isApproaching &&
-                    _ms.activeMeeting?.id.startsWith('demo_') != true) {
-                  _scheduleMeetingPositionUpdate();
-                }
 
                 // 전환 중엔 마커 업데이트 없이 zoom 값만 갱신
                 if (_isGlobeTransitioning) {
@@ -2077,31 +2417,50 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               onLongTapListener: _onMapLongTap, // ignore: deprecated_member_use
             ),
 
-            // ── 일반 지도 컨트롤 ─────────────────────────────────────────
-            AnimatedOpacity(
-              opacity: controlsVisible ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 280),
-              child: IgnorePointer(
-                ignoring: !controlsVisible,
-                child: _MapControls(
-                  onGlobeTap: _enterGlobeMode,
-                  onLayerTap: () => _showLayerSheet(context, ref),
-                  onFilterTap: () => _showFilterModal(context),
-                  onPolylineTap: _onPolylineTap,
-                  onMeetingTap: () => _showMeetingCreateSheet(context),
-                  onFriendsTap: () => _showFriendsScreen(context),
-                  routeActive: _routeMode,
-                  isExpanded: _controlsExpanded,
-                  onToggle: () =>
-                      setState(() => _controlsExpanded = !_controlsExpanded),
+            // ── 지도 컨트롤 (왼쪽 상단) ──────────────────────────────────
+            Positioned(
+              left: 0,
+              top: 0,
+              child: AnimatedOpacity(
+                opacity: controlsVisible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 280),
+                child: IgnorePointer(
+                  ignoring: !controlsVisible,
+                  child: _MapControls(
+                    onGlobeTap: _enterGlobeMode,
+                    onLayerTap: () => _showLayerSheet(context, ref),
+                    onFilterTap: () => _showFilterModal(context),
+                    onPolylineTap: _onPolylineTap,
+                    onNotifTap: () => _showNotificationCenter(context),
+                    notifCount: notifCount,
+                    onMeetingTap: () {
+                      if (meetingState.isApproaching &&
+                          meetingState.activeMeeting != null &&
+                          !meetingState.activeMeeting!.id.startsWith('demo_')) {
+                        setState(() => _meetingBottomSheetVisible = !_meetingBottomSheetVisible);
+                      } else {
+                        _showMeetingCreateSheet(context);
+                      }
+                    },
+                    onFriendsTap: () => _showFriendsScreen(context),
+                    routeActive: _routeMode,
+                    isExpanded: _controlsExpanded,
+                    enabledControls: enabledControls,
+                    onToggle: () =>
+                        setState(() => _controlsExpanded = !_controlsExpanded),
+                  ),
                 ),
               ),
             ),
 
-            // ── 현재 위치 버튼 (우측 하단) ───────────────────────────────
-            Positioned(
+            // ── 현재 위치 버튼 (우측 하단, 약속 시트 있으면 위로 이동) ───
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 380),
+              curve: Curves.easeOutCubic,
               right: 16,
-              bottom: MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 89,
+              bottom: meetingSheetActive
+                  ? MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 89 + 205
+                  : MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0) + 89,
               child: AnimatedOpacity(
                 opacity: controlsVisible ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 280),
@@ -2175,32 +2534,27 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 ),
               ),
 
-            // ── 약속 — 고무줄 선 + 아바타 마커 오버레이 ─────────────────
+            // ── 약속 바텀시트 (지도 어노테이션은 네이티브로 처리됨) ─────────
             Builder(builder: (ctx) {
-              final ms = ref.watch(meetingProvider);
-              if (!ms.isApproaching ||
-                  ms.activeMeeting == null ||
-                  ms.activeMeeting!.id.startsWith('demo_')) {
+              if (!meetingState.isApproaching ||
+                  meetingState.activeMeeting == null ||
+                  meetingState.activeMeeting!.id.startsWith('demo_')) {
                 return const SizedBox.shrink();
               }
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: MeetingMapOverlay(
-                      myScreenPos: _meetingMyScreenPos,
-                      friendScreenPos: _meetingFriendScreenPos,
-                      meeting: ms.activeMeeting!,
-                      distanceMeters: ms.distanceMeters,
-                      etaSeconds: ms.etaSeconds,
-                    ),
+              final bottomInset = MediaQuery.of(ctx).padding.bottom;
+              return AnimatedPositioned(
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeOutCubic,
+                left: 0,
+                right: 0,
+                bottom: _meetingBottomSheetVisible
+                    ? bottomInset + 72 + 8
+                    : -220.0,
+                child: MeetingBottomSheet(
+                  onClose: () => setState(
+                    () => _meetingBottomSheetVisible = false,
                   ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: MediaQuery.of(ctx).padding.bottom.clamp(0.0, 60.0) + 16,
-                    child: const MeetingBottomSheet(),
-                  ),
-                ],
+                ),
               );
             }),
 
@@ -2234,8 +2588,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             // ── Recap 위치 배너 ───────────────────────────────────────────
             if (_recapBannerPin != null)
               RecapLocationBanner(
-                pin: _recapBannerPin!,
+                memory: _recapBannerPin!,
                 onDismiss: () => setState(() => _recapBannerPin = null),
+              ),
+
+            // ── 새싹 애니메이션 오버레이 ──────────────────────────────────
+            if (_sproutPin != null && _sproutPos != null)
+              _PinSproutOverlay(
+                key: ValueKey(_sproutPin!.id),
+                pin: _sproutPin!,
+                screenPos: _sproutPos!,
+                themeColor: ref.read(themePresetProvider).primary,
               ),
 
             // ── 롱프레스 리플 오버레이 ────────────────────────────────────
@@ -2277,8 +2640,11 @@ class _MapControls extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onMeetingTap;
   final VoidCallback onFriendsTap;
+  final VoidCallback onNotifTap;
   final bool routeActive;
   final bool isExpanded;
+  final int notifCount;
+  final Set<MapControlId> enabledControls;
 
   const _MapControls({
     required this.onGlobeTap,
@@ -2288,12 +2654,18 @@ class _MapControls extends StatelessWidget {
     required this.onToggle,
     required this.onMeetingTap,
     required this.onFriendsTap,
+    required this.onNotifTap,
+    required this.enabledControls,
     this.routeActive = false,
     this.isExpanded = true,
+    this.notifCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.isDark;
+    // 화면 너비 - 좌측 패딩 - 우측 여백 - 두 고정 버튼(44+8+44+8) = 확장 영역 최대 너비
+    final maxExpandWidth = MediaQuery.of(context).size.width - 16 - 16 - 44 - 8 - 44 - 8;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.only(left: 16, top: 16),
@@ -2301,40 +2673,87 @@ class _MapControls extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── 경로 버튼 (항상 고정 앵커) ────────────────────────────
+            // ── 알림 버튼 (항상 고정 앵커) ────────────────────────────
             GestureDetector(
-              onTap: onPolylineTap,
+              onTap: onNotifTap,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(22),
                 child: BackdropFilter(
                   filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: routeActive
-                          ? context.primaryColor
-                          : context.glassBtnBg,
-                      shape: BoxShape.circle,
-                      border: routeActive
-                          ? null
-                          : Border.all(color: context.glassBorder),
-                      boxShadow: [
-                        BoxShadow(
-                          color: routeActive
-                              ? context.primaryColor.withValues(alpha: 0.4)
-                              : Colors.black.withValues(alpha: 0.08),
-                          blurRadius: routeActive ? 14 : 8,
-                          offset: const Offset(0, 3),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: notifCount > 0
+                              ? context.primaryColor.withValues(alpha: 0.15)
+                              : context.glassBtnBg,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: notifCount > 0
+                                ? context.primaryColor.withValues(alpha: 0.40)
+                                : context.glassBorder,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Icon(
-                      routeActive ? Icons.close_rounded : Icons.route_rounded,
-                      size: 20,
-                      color: routeActive ? Colors.white : context.labelColor,
-                    ),
+                        child: Center(
+                          child: SvgPicture.asset(
+                            () {
+                              if (notifCount > 0) {
+                                return isDark
+                                    ? 'lib/img/notification-on-svgrepo-com (1).svg'
+                                    : 'lib/img/notification-on-svgrepo-com.svg';
+                              } else {
+                                return isDark
+                                    ? 'lib/img/notification-bell-svgrepo-com (2).svg'
+                                    : 'lib/img/notification-bell-svgrepo-com.svg';
+                              }
+                            }(),
+                            width: 20,
+                            height: 20,
+                            colorFilter: ColorFilter.mode(
+                              notifCount > 0
+                                  ? context.primaryColor
+                                  : context.labelColor,
+                              BlendMode.srcIn,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (notifCount > 0)
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEF4444),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                notifCount > 9 ? '9+' : '$notifCount',
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -2387,30 +2806,80 @@ class _MapControls extends StatelessWidget {
                 opacity: isExpanded ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 200),
                 child: isExpanded
-                    ? SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(width: 8),
-                            GlassButton(icon: Icons.tune, onTap: onFilterTap, size: 44),
-                            const SizedBox(width: 8),
-                            GlassButton(icon: Icons.public_rounded, onTap: onGlobeTap, size: 44),
-                            const SizedBox(width: 8),
-                            GlassButton(icon: Icons.layers_outlined, onTap: onLayerTap, size: 44),
-                            const SizedBox(width: 10),
-                            Container(
-                              width: 1,
-                              height: 24,
-                              color: Colors.white.withValues(alpha: 0.20),
-                            ),
-                            const SizedBox(width: 10),
-                            GlassButton(icon: Icons.event_rounded, onTap: onMeetingTap, size: 44),
-                            const SizedBox(width: 8),
-                            GlassButton(icon: Icons.people_rounded, onTap: onFriendsTap, size: 44),
-                            const SizedBox(width: 8),
-                          ],
+                    ? SizedBox(
+                        width: maxExpandWidth.clamp(44.0, double.infinity),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: 8),
+                              if (enabledControls.contains(MapControlId.filter)) ...[
+                                GlassButton(icon: Icons.tune, onTap: onFilterTap, size: 44),
+                                const SizedBox(width: 8),
+                              ],
+                              if (enabledControls.contains(MapControlId.globe)) ...[
+                                GlassButton(icon: Icons.public_rounded, onTap: onGlobeTap, size: 44),
+                                const SizedBox(width: 8),
+                              ],
+                              if (enabledControls.contains(MapControlId.layer)) ...[
+                                GlassButton(icon: Icons.layers_outlined, onTap: onLayerTap, size: 44),
+                                const SizedBox(width: 8),
+                              ],
+                              if (enabledControls.contains(MapControlId.route)) ...[
+                                GestureDetector(
+                                  onTap: onPolylineTap,
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 220),
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: routeActive
+                                          ? context.primaryColor
+                                          : context.glassBtnBg,
+                                      shape: BoxShape.circle,
+                                      border: routeActive
+                                          ? null
+                                          : Border.all(color: context.glassBorder),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: routeActive
+                                              ? context.primaryColor.withValues(alpha: 0.4)
+                                              : Colors.black.withValues(alpha: 0.08),
+                                          blurRadius: routeActive ? 14 : 8,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      routeActive ? Icons.close_rounded : Icons.route_rounded,
+                                      size: 20,
+                                      color: routeActive ? Colors.white : context.labelColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (enabledControls.any((id) => id == MapControlId.meeting || id == MapControlId.friends) &&
+                                  enabledControls.any((id) => id == MapControlId.filter || id == MapControlId.globe || id == MapControlId.layer || id == MapControlId.route)) ...[
+                                Container(
+                                  width: 1,
+                                  height: 24,
+                                  color: Colors.white.withValues(alpha: 0.20),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (enabledControls.contains(MapControlId.meeting)) ...[
+                                GlassButton(icon: Icons.event_rounded, onTap: onMeetingTap, size: 44),
+                                const SizedBox(width: 8),
+                              ],
+                              if (enabledControls.contains(MapControlId.friends)) ...[
+                                GlassButton(icon: Icons.people_rounded, onTap: onFriendsTap, size: 44),
+                                const SizedBox(width: 8),
+                              ],
+                            ],
+                          ),
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -3062,8 +3531,13 @@ class _LayerSheet extends StatelessWidget {
     (MapStyleOption.dark,     '다크',    '야간 모드',   Color(0xFFCBBFFF), Color(0xFF0D1220)),
     (MapStyleOption.satellite,'위성',    '항공 사진',   Color(0xFF90EFA0), Color(0xFF1D3D28)),
     (MapStyleOption.outdoors, '야외',    '등산·하이킹', Color(0xFF5A3A18), Color(0xFFF2E8CC)),
-    (MapStyleOption.light,    '라이트',  '밝은 모드',   Color(0xFF5C5242), Color(0xFFF6F3EC)),
-    (MapStyleOption.streets,  '스트리트','도로 중심',   Color(0xFF1E2C3A), Color(0xFFFAFAF6)),
+    (MapStyleOption.light,        '라이트',   '밝은 모드',    Color(0xFF5C5242), Color(0xFFF6F3EC)),
+    (MapStyleOption.streets,      '스트리트', '도로 중심',    Color(0xFF1E2C3A), Color(0xFFFAFAF6)),
+    (MapStyleOption.buildings3d,  '3D 도시',  '입체 건물',    Color(0xFFE2E8F0), Color(0xFF1E293B)),
+    (MapStyleOption.navDay,          '내비 낮',   '네비게이션 낮',  Color(0xFFFFFFFF), Color(0xFF1E6FF0)),
+    (MapStyleOption.navNight,        '내비 밤',   '네비게이션 밤',  Color(0xFF6BBBFF), Color(0xFF1A2533)),
+    (MapStyleOption.satellitePure,   '순수 위성', '레이블 없음',    Color(0xFF4ADE80), Color(0xFF1C3A1C)),
+    (MapStyleOption.standardSatellite,'위성 3D',  '위성+입체 건물', Color(0xFFAFC2D4), Color(0xFF1C3A1C)),
   ];
 
   @override
@@ -3248,6 +3722,16 @@ class _MapStylePainter extends CustomPainter {
         _paintLight(canvas, s);
       case MapStyleOption.streets:
         _paintStreets(canvas, s);
+      case MapStyleOption.buildings3d:
+        _paintBuildings3d(canvas, s);
+      case MapStyleOption.navDay:
+        _paintNavDay(canvas, s);
+      case MapStyleOption.navNight:
+        _paintNavNight(canvas, s);
+      case MapStyleOption.satellitePure:
+        _paintSatellitePure(canvas, s);
+      case MapStyleOption.standardSatellite:
+        _paintStandardSatellite(canvas, s);
       case MapStyleOption.auto:
         _paintAuto(canvas, s);
     }
@@ -3457,6 +3941,81 @@ class _MapStylePainter extends CustomPainter {
   }
 
   // 자동 테마 미리보기: 상단 절반 밝음(낮), 하단 절반 어두움(밤)
+  void _paintNavDay(Canvas canvas, Size s) {
+    // 밝은 네비게이션 배경
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFFE8F4FD));
+    // 굵은 도로 (파란 고속도로 느낌)
+    final roadPaint = Paint()..color = const Color(0xFF1E6FF0)..strokeWidth = s.width * 0.12..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(0, s.height * 0.5), Offset(s.width, s.height * 0.5), roadPaint);
+    final road2 = Paint()..color = const Color(0xFF60A5FA)..strokeWidth = s.width * 0.07..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(s.width * 0.3, 0), Offset(s.width * 0.6, s.height), road2);
+    // 방향 화살표
+    final arrowPaint = Paint()..color = Colors.white..strokeWidth = 2..strokeCap = StrokeCap.round;
+    final cx = s.width * 0.65; final cy = s.height * 0.5;
+    canvas.drawLine(Offset(cx - 6, cy), Offset(cx + 6, cy), arrowPaint);
+    canvas.drawLine(Offset(cx + 2, cy - 4), Offset(cx + 6, cy), arrowPaint);
+    canvas.drawLine(Offset(cx + 2, cy + 4), Offset(cx + 6, cy), arrowPaint);
+  }
+
+  void _paintNavNight(Canvas canvas, Size s) {
+    // 야간 네비게이션
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFF1A2533));
+    final roadPaint = Paint()..color = const Color(0xFF2D4A6B)..strokeWidth = s.width * 0.14..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(0, s.height * 0.5), Offset(s.width, s.height * 0.5), roadPaint);
+    final road2 = Paint()..color = const Color(0xFF1E3A52)..strokeWidth = s.width * 0.08..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(s.width * 0.25, 0), Offset(s.width * 0.55, s.height), road2);
+    // 네온 강조 라인
+    final glowPaint = Paint()..color = const Color(0xFF6BBBFF)..strokeWidth = 1.5..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(0, s.height * 0.5), Offset(s.width, s.height * 0.5), glowPaint);
+    // 화살표
+    final arrowPaint = Paint()..color = const Color(0xFF6BBBFF)..strokeWidth = 1.5..strokeCap = StrokeCap.round;
+    final cx = s.width * 0.65; final cy = s.height * 0.5;
+    canvas.drawLine(Offset(cx - 6, cy), Offset(cx + 6, cy), arrowPaint);
+    canvas.drawLine(Offset(cx + 2, cy - 4), Offset(cx + 6, cy), arrowPaint);
+    canvas.drawLine(Offset(cx + 2, cy + 4), Offset(cx + 6, cy), arrowPaint);
+  }
+
+  void _paintSatellitePure(Canvas canvas, Size s) {
+    // 순수 위성 — 레이블 없는 초록+갈색 지형
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFF1C3A1C));
+    // 초록 식생
+    canvas.drawOval(Rect.fromLTWH(s.width * 0.1, s.height * 0.15, s.width * 0.4, s.height * 0.35),
+        Paint()..color = const Color(0xFF2D5A2D));
+    canvas.drawOval(Rect.fromLTWH(s.width * 0.45, s.height * 0.4, s.width * 0.45, s.height * 0.45),
+        Paint()..color = const Color(0xFF3A6B2A));
+    // 갈색 도시 블록
+    canvas.drawRect(Rect.fromLTWH(s.width * 0.55, s.height * 0.1, s.width * 0.35, s.height * 0.3),
+        Paint()..color = const Color(0xFF5A4A2A));
+    // 강 (파란 선)
+    final riverPaint = Paint()..color = const Color(0xFF1A3A5C)..strokeWidth = s.width * 0.06..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(0, s.height * 0.7), Offset(s.width * 0.6, s.height * 0.55), riverPaint);
+    canvas.drawLine(Offset(s.width * 0.6, s.height * 0.55), Offset(s.width, s.height * 0.65), riverPaint);
+  }
+
+  void _paintStandardSatellite(Canvas canvas, Size s) {
+    // 위성 배경
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFF1C3A1C));
+    canvas.drawOval(Rect.fromLTWH(0, s.height * 0.3, s.width * 0.55, s.height * 0.5),
+        Paint()..color = const Color(0xFF2D5A2D));
+    canvas.drawRect(Rect.fromLTWH(s.width * 0.5, 0, s.width * 0.5, s.height * 0.55),
+        Paint()..color = const Color(0xFF4A3A20));
+    // 위에 3D 건물 오버레이
+    final buildPaint = Paint()..color = const Color(0xCC8B9EB5);
+    final sidePaint2 = Paint()..color = const Color(0xCC5A6F85);
+    final roofP = Paint()..color = const Color(0xCCAFC2D4);
+    void b(double x, double y, double w, double h, double d) {
+      canvas.drawRect(Rect.fromLTWH(x, y, w, h), buildPaint);
+      canvas.drawPath(Path()
+        ..moveTo(x+w,y)..lineTo(x+w+d,y-d*0.5)
+        ..lineTo(x+w+d,y+h-d*0.5)..lineTo(x+w,y+h)..close(), sidePaint2);
+      canvas.drawPath(Path()
+        ..moveTo(x,y)..lineTo(x+d,y-d*0.5)
+        ..lineTo(x+w+d,y-d*0.5)..lineTo(x+w,y)..close(), roofP);
+    }
+    b(s.width*0.1, s.height*0.35, s.width*0.22, s.height*0.38, 7);
+    b(s.width*0.55, s.height*0.18, s.width*0.18, s.height*0.5, 7);
+  }
+
   void _paintAuto(Canvas canvas, Size s) {
     // 낮 (상단)
     canvas.drawRect(
@@ -3486,6 +4045,40 @@ class _MapStylePainter extends CustomPainter {
       s.width * 0.11,
       Paint()..color = const Color(0xFFCBBFFF),
     );
+  }
+
+  void _paintBuildings3d(Canvas canvas, Size s) {
+    // 도로 배경
+    canvas.drawRect(Offset.zero & s, Paint()..color = const Color(0xFFF0F4F8));
+    // 건물 블록 3개 — 원근감 있는 입체 직사각형
+    final buildingPaint = Paint()..color = const Color(0xFFBEC8D8);
+    final sidePaint = Paint()..color = const Color(0xFF94A3B8);
+    final roofPaint = Paint()..color = const Color(0xFFE2E8F0);
+
+    void drawBuilding(double x, double y, double w, double h, double depth) {
+      // 정면
+      canvas.drawRect(Rect.fromLTWH(x, y, w, h), buildingPaint);
+      // 오른쪽 면
+      final sidePath = Path()
+        ..moveTo(x + w, y)
+        ..lineTo(x + w + depth, y - depth * 0.5)
+        ..lineTo(x + w + depth, y + h - depth * 0.5)
+        ..lineTo(x + w, y + h)
+        ..close();
+      canvas.drawPath(sidePath, sidePaint);
+      // 지붕
+      final roofPath = Path()
+        ..moveTo(x, y)
+        ..lineTo(x + depth, y - depth * 0.5)
+        ..lineTo(x + w + depth, y - depth * 0.5)
+        ..lineTo(x + w, y)
+        ..close();
+      canvas.drawPath(roofPath, roofPaint);
+    }
+
+    drawBuilding(s.width * 0.08, s.height * 0.38, s.width * 0.26, s.height * 0.42, 8);
+    drawBuilding(s.width * 0.42, s.height * 0.22, s.width * 0.22, s.height * 0.58, 8);
+    drawBuilding(s.width * 0.70, s.height * 0.34, s.width * 0.20, s.height * 0.48, 8);
   }
 
   @override
@@ -3550,3 +4143,375 @@ class _LongPressRipplePainter extends CustomPainter {
   @override
   bool shouldRepaint(_LongPressRipplePainter old) => old.progress != progress;
 }
+
+// ─── 알림 센터 시트 ───────────────────────────────────────────────────────────
+
+class _NotificationCenterSheet extends ConsumerWidget {
+  const _NotificationCenterSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final requestsAsync = ref.watch(pendingRequestsProvider);
+    final primary = context.primaryColor;
+    final bottomInset = MediaQuery.of(context).padding.bottom.clamp(0.0, 60.0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.sheetBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 14, 20, bottomInset + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: context.handleColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Text(
+            '알림',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: context.labelColor,
+              letterSpacing: -0.3,
+              fontFamily: 'Pretendard',
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '받은 친구 요청을 확인하세요',
+            style: TextStyle(
+              fontSize: 13,
+              color: context.subLabelColor,
+              fontFamily: 'Pretendard',
+            ),
+          ),
+          const SizedBox(height: 20),
+          requestsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (_, _) => const SizedBox.shrink(),
+            data: (requests) {
+              if (requests.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 28),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        SvgPicture.asset(
+                          'lib/img/notification-bell-svgrepo-com.svg',
+                          width: 36,
+                          height: 36,
+                          colorFilter: ColorFilter.mode(
+                            context.subLabelColor.withValues(alpha: 0.35),
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '새 알림이 없어요',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: context.subLabelColor,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                itemCount: requests.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (_, i) {
+                  final req = requests[i];
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: context.cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: context.glassBorder),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.10),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.person_add_outlined, size: 20, color: primary),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${req.fromNickname} 님이 친구 요청을 보냈어요',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: context.labelColor,
+                                  letterSpacing: -0.2,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                req.fromFriendCode,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.subLabelColor,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () async {
+                                await ref
+                                    .read(socialServiceProvider)
+                                    .rejectFriendRequest(req.id);
+                                ref.invalidate(pendingRequestsProvider);
+                              },
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: context.fieldBg,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: context.glassBorder),
+                                ),
+                                child: Icon(Icons.close_rounded, size: 17, color: context.subLabelColor),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () async {
+                                final err = await ref
+                                    .read(socialServiceProvider)
+                                    .acceptFriendRequest(req.id, req.fromUid, req.fromNickname, req.fromFriendCode);
+                                if (err == null) {
+                                  await ref.read(friendsProvider.notifier).addFriend(
+                                    req.fromFriendCode, req.fromNickname,
+                                    uid: req.fromUid, notify: false,
+                                  );
+                                  ref.invalidate(friendsStreamProvider);
+                                }
+                                ref.invalidate(pendingRequestsProvider);
+                              },
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: primary.withValues(alpha: 0.35)),
+                                ),
+                                child: Icon(Icons.check_rounded, size: 17, color: primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 새싹 애니메이션 오버레이 ──────────────────────────────────────────────────
+
+class _PinSproutOverlay extends StatefulWidget {
+  final PinModel pin;
+  final Offset screenPos;
+  final Color themeColor;
+
+  const _PinSproutOverlay({
+    super.key,
+    required this.pin,
+    required this.screenPos,
+    required this.themeColor,
+  });
+
+  @override
+  State<_PinSproutOverlay> createState() => _PinSproutOverlayState();
+}
+
+class _PinSproutOverlayState extends State<_PinSproutOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _rings;
+  late final Animation<double> _sparks;
+  late final Animation<double> _exitFade;
+
+  @override
+  void initState() {
+    super.initState();
+    // 총 2100ms: 이펙트 피크(1100ms) + 줌아웃(950ms)
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2100),
+    )..forward();
+
+    // 링/파티클 이펙트
+    _rings = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.0, 0.50, curve: Curves.easeOut),
+    );
+    _sparks = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.04, 0.52, curve: Curves.easeOut),
+    );
+    // 줌아웃 시작(52%)과 동기화해 페이드 아웃
+    _exitFade = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.52, 1.0, curve: Curves.easeIn),
+      ),
+    );
+
+    _ctrl.addListener(() {
+      if (_ctrl.value >= 0.04 && _ctrl.value < 0.06) {
+        HapticFeedback.lightImpact();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const w = 220.0;
+    const center = Offset(w / 2, w / 2);
+    final cx = widget.screenPos.dx;
+    final cy = widget.screenPos.dy;
+
+    final outerColor = widget.pin.pinOuterColor != null
+        ? Color(widget.pin.pinOuterColor!)
+        : widget.themeColor;
+
+    return Positioned(
+      left: cx - w / 2,
+      top: cy - w / 2,
+      width: w,
+      height: w,
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, _) => Opacity(
+            opacity: _exitFade.value.clamp(0.0, 1.0),
+            child: CustomPaint(
+              size: const Size(w, w),
+              painter: _SproutEffectPainter(
+                rings: _rings.value,
+                sparks: _sparks.value,
+                color: outerColor,
+                center: center,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SproutEffectPainter extends CustomPainter {
+  final double rings;
+  final double sparks;
+  final Color color;
+  final Offset center;
+
+  static const _sparkAngles = <double>[
+    -90, -60, -30, 0, 30, 60, -120, -150,
+  ];
+
+  const _SproutEffectPainter({
+    required this.rings,
+    required this.sparks,
+    required this.color,
+    required this.center,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // ── 링 (3개, stagger) ──
+    const maxR = 76.0;
+    const stagger = 0.22;
+    for (var i = 0; i < 3; i++) {
+      final t = ((rings - i * stagger) / (1 - i * stagger)).clamp(0.0, 1.0);
+      if (t <= 0) continue;
+      canvas.drawCircle(
+        center,
+        t * maxR,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8
+          ..color = color.withValues(alpha: (1 - t) * 0.6),
+      );
+    }
+
+    // ── 파티클 (8개) ──
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (var i = 0; i < _sparkAngles.length; i++) {
+      final delay = i * 0.06;
+      final t = ((sparks - delay) / (1 - delay)).clamp(0.0, 1.0);
+      if (t <= 0) continue;
+      final rad = _sparkAngles[i] * math.pi / 180;
+      final dist = t * 56;
+      paint.color = color.withValues(alpha: (1 - t) * 0.9);
+      canvas.drawCircle(
+        Offset(center.dx + math.cos(rad) * dist, center.dy + math.sin(rad) * dist),
+        (1 - t) * 3.5 + 0.5,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SproutEffectPainter old) =>
+      old.rings != rings || old.sparks != sparks || old.color != color;
+}
+
+
+

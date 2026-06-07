@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:geocoding/geocoding.dart';
 
 import '../../../application/providers/friends_provider.dart';
 import '../../../application/providers/meeting_provider.dart';
+import '../../../application/services/social_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/meeting.dart';
+import '../../screens/meeting/location_picker_screen.dart';
 
 class MeetingCreateSheet extends ConsumerStatefulWidget {
   const MeetingCreateSheet({super.key});
@@ -18,17 +19,11 @@ class MeetingCreateSheet extends ConsumerStatefulWidget {
 }
 
 class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
-  final _locationCtrl = TextEditingController();
+  LocationPickResult? _pickedLocation;
   DateTime _scheduledAt = DateTime.now().add(const Duration(hours: 1));
   TransitMode _transitMode = TransitMode.transit;
   String? _selectedFriendUid;
   bool _isLoading = false;
-
-  @override
-  void dispose() {
-    _locationCtrl.dispose();
-    super.dispose();
-  }
 
   Future<void> _pickTime() async {
     DateTime picked = _scheduledAt;
@@ -66,36 +61,31 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
     );
   }
 
-  Future<void> _submit() async {
-    final input = _locationCtrl.text.trim();
+  Future<void> _openLocationPicker() async {
+    final result = await Navigator.push<LocationPickResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(initial: _pickedLocation),
+        fullscreenDialog: true,
+      ),
+    );
+    if (result != null) setState(() => _pickedLocation = result);
+  }
 
+  Future<void> _submit() async {
     // ── 1. 기본 필드 검증 ─────────────────────────────────────────────
     if (_selectedFriendUid == null) {
       _showDialog('친구를 선택해주세요', '약속을 잡을 친구를 먼저 선택해주세요.');
       return;
     }
-    if (input.isEmpty) {
-      _showDialog('장소를 입력해주세요', '만날 장소를 입력해주세요.');
-      return;
-    }
-
-    // ── 2. 장소명 형식 검증 (숫자만 / 의미없는 입력 차단) ─────────────
-    final hasLetter = input.contains(RegExp(r'[가-힣a-zA-Z]'));
-    if (!hasLetter) {
-      _showDialog(
-        '올바른 장소명을 입력해주세요',
-        '숫자만 입력하거나 의미없는 문자는 사용할 수 없어요.\n예) 강남역 2번 출구, 홍대입구역',
-      );
-      return;
-    }
-    if (input.length < 2) {
-      _showDialog('장소명이 너무 짧아요', '정확한 장소명을 2글자 이상 입력해주세요.');
+    if (_pickedLocation == null) {
+      _showDialog('장소를 선택해주세요', '지도에서 만날 장소를 먼저 선택해주세요.');
       return;
     }
 
     HapticFeedback.mediumImpact();
 
-    // ── 3. 데모 친구 → Supabase 건너뛰고 즉시 주입 ───────────────────
+    // ── 2. 데모 친구 → Supabase 건너뛰고 즉시 주입 ───────────────────
     if (_selectedFriendUid!.startsWith('demo_')) {
       ref.read(meetingProvider.notifier).injectDemoMeeting();
       if (mounted) Navigator.pop(context, true);
@@ -104,48 +94,13 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
 
     setState(() => _isLoading = true);
 
-    // ── 4. 지오코딩 (8초 타임아웃) ────────────────────────────────────
-    double? targetLat;
-    double? targetLng;
-    try {
-      final locations = await locationFromAddress(input)
-          .timeout(const Duration(seconds: 8));
-      if (locations.isNotEmpty) {
-        targetLat = locations.first.latitude;
-        targetLng = locations.first.longitude;
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
-
-    if (targetLat == null || targetLng == null) {
-      setState(() => _isLoading = false);
-      _showDialog(
-        '장소를 찾을 수 없어요',
-        '"$input"에 해당하는 위치를 찾지 못했어요.\n더 정확한 주소나 장소명으로 다시 시도해주세요.',
-      );
-      return;
-    }
-
-    // ── 5. 한국 좌표 범위 검증 ─────────────────────────────────────────
-    const minLat = 33.0; const maxLat = 39.0;
-    const minLng = 124.0; const maxLng = 132.0;
-    if (targetLat < minLat || targetLat > maxLat ||
-        targetLng < minLng || targetLng > maxLng) {
-      setState(() => _isLoading = false);
-      _showDialog(
-        '국내 장소만 입력 가능해요',
-        '현재 한국 내 장소만 지원합니다.\n국내 지명으로 다시 입력해주세요.',
-      );
-      return;
-    }
-
-    // ── 6. 약속 생성 ──────────────────────────────────────────────────
+    // ── 3. 약속 생성 ──────────────────────────────────────────────────
+    final loc = _pickedLocation!;
     final success = await ref.read(meetingProvider.notifier).createMeeting(
           inviteeUid: _selectedFriendUid!,
-          targetLat: targetLat,
-          targetLng: targetLng,
-          targetName: input,
+          targetLat: loc.lat,
+          targetLng: loc.lng,
+          targetName: loc.name,
           scheduledAt: _scheduledAt,
           transitMode: _transitMode,
         );
@@ -200,7 +155,12 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final friends = ref.watch(friendsProvider);
+    // Supabase stream friends (다른 폰에서 추가된 친구 포함) 우선, 없으면 로컬
+    final supaFriends = ref.watch(friendsStreamProvider).valueOrNull;
+    final localFriends = ref.watch(friendsProvider);
+    final friends = (supaFriends != null && supaFriends.isNotEmpty)
+        ? supaFriends
+        : localFriends;
     final primary = context.primaryColor;
 
     return Container(
@@ -281,13 +241,48 @@ class _MeetingCreateSheetState extends ConsumerState<MeetingCreateSheet> {
 
           const SizedBox(height: 16),
 
-          // 장소 입력
+          // 장소 선택 (지도 피커)
           _SectionLabel(label: '만날 장소'),
           const SizedBox(height: 8),
-          _GlassField(
-            controller: _locationCtrl,
-            hint: '예) 강남역 2번 출구',
-            icon: Icons.place_outlined,
+          GestureDetector(
+            onTap: _openLocationPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: context.bgColor,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _pickedLocation != null
+                      ? primary.withValues(alpha: 0.55)
+                      : context.glassBorder,
+                  width: _pickedLocation != null ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.place_outlined,
+                    size: 18,
+                    color: _pickedLocation != null ? primary : context.subLabelColor,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _pickedLocation?.name ?? '지도에서 장소 선택',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontFamily: 'Pretendard',
+                        color: _pickedLocation != null
+                            ? context.labelColor
+                            : context.subLabelColor,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, size: 18, color: context.subLabelColor),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -435,38 +430,3 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _GlassField extends StatelessWidget {
-  final TextEditingController controller;
-  final String hint;
-  final IconData icon;
-
-  const _GlassField({required this.controller, required this.hint, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      style: TextStyle(fontSize: 14, color: context.labelColor, fontFamily: 'Pretendard'),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: context.subLabelColor, fontSize: 14),
-        prefixIcon: Icon(icon, size: 18, color: context.subLabelColor),
-        filled: true,
-        fillColor: context.bgColor,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: context.glassBorder),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: context.glassBorder),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: context.primaryColor, width: 1.5),
-        ),
-      ),
-    );
-  }
-}

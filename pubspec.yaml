@@ -140,6 +140,10 @@ flutter:
     - lib/img/car-svgrepo-com.svg
     - lib/img/bus-svgrepo-com.svg
     - lib/img/walk-svgrepo-com.svg
+    - lib/img/notification-bell-svgrepo-com.svg
+    - lib/img/notification-bell-svgrepo-com (2).svg
+    - lib/img/notification-on-svgrepo-com.svg
+    - lib/img/notification-on-svgrepo-com (1).svg
     - lib/img/wind-svgrepo-com.svg
     - lib/img/sports/
     - lib/img/food/

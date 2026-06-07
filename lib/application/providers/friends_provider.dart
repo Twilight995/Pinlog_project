@@ -152,7 +152,7 @@ class FriendsNotifier extends StateNotifier<List<Friend>> {
     } catch (_) {}
   }
 
-  Future<void> addFriend(String code, String name, {String? uid}) async {
+  Future<void> addFriend(String code, String name, {String? uid, bool notify = true}) async {
     final normalized = code.toUpperCase().trim();
     if (state.any((f) => f.code == normalized)) return;
     state = [
@@ -165,7 +165,7 @@ class FriendsNotifier extends StateNotifier<List<Friend>> {
       ),
     ];
     await _persist();
-    if (uid != null) _notifyFriend(uid);
+    if (uid != null && notify) _notifyFriend(uid);
   }
 
   void _notifyFriend(String targetUid) {
@@ -180,6 +180,28 @@ class FriendsNotifier extends StateNotifier<List<Friend>> {
         'data': {'type': 'friend_request'},
       },
     ).ignore();
+  }
+
+  void notifyPinTag(List<String> friendCodes, String pinTitle) {
+    if (friendCodes.isEmpty) return;
+    final myNickname = ProfileRepository().getNickname();
+    final displayName = myNickname.isEmpty ? '친구' : myNickname;
+    for (final code in friendCodes) {
+      final uid = state
+          .where((f) => f.code == code && f.supabaseUid != null)
+          .map((f) => f.supabaseUid!)
+          .firstOrNull;
+      if (uid == null) continue;
+      Supabase.instance.client.functions.invoke(
+        'send-fcm',
+        body: {
+          'target_uid': uid,
+          'title': '핀에 태그됐어요',
+          'body': '$displayName님이 "$pinTitle" 기억에 함께한 친구로 태그했어요',
+          'data': {'type': 'pin_tag'},
+        },
+      ).ignore();
+    }
   }
 
   Future<void> removeFriend(String code) async {

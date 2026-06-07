@@ -71,9 +71,32 @@ class WizardStyle {
     disabledBtnFg: Color(0xFFAAAAAA),
   );
 
-  static WizardStyle fromTheme(Color primary) {
+  static WizardStyle fromTheme(Color primary, {bool isDark = false}) {
     final hsl = HSLColor.fromColor(primary);
     final lighter = hsl.withLightness((hsl.lightness + 0.15).clamp(0.0, 1.0)).toColor();
+    if (isDark) {
+      return WizardStyle(
+        background: const Color(0xFF0C0C10),
+        hasCosmic: false,
+        heading: const Color(0xFFFFFFFF),
+        stepLabel: primary,
+        muted: const Color(0xFF8E8E93),
+        surface: const Color(0xFF1C1C1E),
+        surfaceBorder: const Color(0x22FFFFFF),
+        onSurface: const Color(0xFFFFFFFF),
+        hint: const Color(0x50FFFFFF),
+        dotActive: primary,
+        dotInactive: const Color(0x30FFFFFF),
+        iconBtnBg: const Color(0x18FFFFFF),
+        iconBtnBorder: const Color(0x22FFFFFF),
+        iconBtnFg: const Color(0xEEFFFFFF),
+        accent: primary,
+        accentLight: lighter,
+        disabledBtnBg1: const Color(0x18FFFFFF),
+        disabledBtnBg2: const Color(0x12FFFFFF),
+        disabledBtnFg: const Color(0x55FFFFFF),
+      );
+    }
     return WizardStyle(
       background: const Color(0xFFF2F2F7),
       hasCosmic: false,

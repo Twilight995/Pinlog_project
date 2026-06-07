@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,6 +11,7 @@ import '../../application/providers/nav_provider.dart';
 import '../../application/providers/pin_provider.dart';
 import '../../application/services/notification_service.dart';
 import '../../application/services/recap_service.dart';
+import '../../application/services/social_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../widgets/recap/recap_popup.dart';
 import 'activity/activity_screen.dart';
@@ -35,7 +37,16 @@ class _MainShellState extends ConsumerState<MainShell> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkRecap());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkRecap();
+      // MainShell 마운트 시점에 이미 로그인 상태이면 서버에서 핀 재로드
+      // (logout → login 계정 전환 시 signedIn 이벤트를 리스너가 놓치는 케이스 방어)
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid != null) {
+        ref.read(pinsProvider.notifier).clearState();
+        ref.read(pinsProvider.notifier).loadFromServer();
+      }
+    });
   }
 
   @override
@@ -116,6 +127,7 @@ class _MainShellState extends ConsumerState<MainShell> {
           ignoring: !_chromeVisible || isGlobeMode,
           child: _FloatingNav(
             activeTab: activeTab,
+            notificationCount: ref.watch(pendingRequestCountProvider),
             onTabChanged: (i) => ref.read(activeTabProvider.notifier).state = i,
             onCreateTap: () {
               ref.read(activeTabProvider.notifier).state = 0;
@@ -222,11 +234,17 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
         return _withCover(_child(i), revealCover);
       }
       // 일반 Flutter 탭: 페이드인 + 미세 스케일 (슬라이드 없음)
-      return Transform.scale(
-        scale: 0.97 + 0.03 * tScaleIn,
-        child: Opacity(
-          opacity: tFadeIn.clamp(0.0, 1.0),
-          child: _child(i),
+      // AnnotatedRegion으로 감싸 MapScreen의 상태바 annotation을 덮어씌움
+      // (MapScreen은 항상 마운트되어 있어 annotation이 남아있기 때문)
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        child: Transform.scale(
+          scale: 0.97 + 0.03 * tScaleIn,
+          child: Opacity(
+            opacity: tFadeIn.clamp(0.0, 1.0),
+            child: _child(i),
+          ),
         ),
       );
     }
@@ -276,11 +294,13 @@ class _AnimatedTabViewState extends State<_AnimatedTabView>
 
 class _FloatingNav extends StatelessWidget {
   final int activeTab;
+  final int notificationCount;
   final ValueChanged<int> onTabChanged;
   final VoidCallback onCreateTap;
 
   const _FloatingNav({
     required this.activeTab,
+    required this.notificationCount,
     required this.onTabChanged,
     required this.onCreateTap,
   });
@@ -371,6 +391,7 @@ class _FloatingNav extends StatelessWidget {
                         activeIcon: Icons.bolt,
                         label: '활동',
                         isActive: activeTab == 2,
+                        badgeCount: notificationCount,
                         onTap: () => onTabChanged(2),
                       ),
                       _NavItem(
@@ -397,6 +418,7 @@ class _NavItem extends StatefulWidget {
   final IconData activeIcon;
   final String label;
   final bool isActive;
+  final int badgeCount;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -405,6 +427,7 @@ class _NavItem extends StatefulWidget {
     required this.label,
     required this.isActive,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -428,6 +451,15 @@ class _NavItemState extends State<_NavItem>
       begin: 1.0,
       end: 0.82,
     ).animate(CurvedAnimation(parent: _pressCtrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void didUpdateWidget(_NavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) {
+      _pressCtrl.stop();
+      _pressCtrl.value = 0.0;
+    }
   }
 
   @override
@@ -480,22 +512,50 @@ class _NavItemState extends State<_NavItem>
                       : null,
                 ),
                 child: Center(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 160),
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeIn,
-                    transitionBuilder: (child, anim) => ScaleTransition(
-                      scale: anim,
-                      child: FadeTransition(opacity: anim, child: child),
-                    ),
-                    child: Icon(
-                      widget.isActive ? widget.activeIcon : widget.icon,
-                      key: ValueKey(widget.isActive),
-                      size: 22,
-                      color: widget.isActive
-                          ? context.primaryColor
-                          : AppColors.grey,
-                    ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 160),
+                        switchInCurve: Curves.easeOutBack,
+                        switchOutCurve: Curves.easeIn,
+                        transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim,
+                          child: FadeTransition(opacity: anim, child: child),
+                        ),
+                        child: Icon(
+                          widget.isActive ? widget.activeIcon : widget.icon,
+                          key: ValueKey(widget.isActive),
+                          size: 22,
+                          color: widget.isActive
+                              ? context.primaryColor
+                              : AppColors.grey,
+                        ),
+                      ),
+                      if (widget.badgeCount > 0)
+                        Positioned(
+                          top: -4,
+                          right: -6,
+                          child: Container(
+                            constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEF4444),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              widget.badgeCount > 9 ? '9+' : '${widget.badgeCount}',
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                height: 1.2,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),

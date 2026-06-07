@@ -51,15 +51,13 @@ class _StepEmotionIntensityState extends State<StepEmotionIntensity> {
   void _selectEmotion(String e) {
     HapticFeedback.selectionClick();
     widget.data.emotion = e;
-    widget.onChange();
-    setState(() {});
+    widget.onChange(); // 부모 setState → 이 위젯도 리빌드됨
   }
 
   void _selectIntensity(int v) {
     HapticFeedback.selectionClick();
     widget.data.intensityLevel = v;
     widget.onChange();
-    setState(() {});
   }
 
   @override
@@ -220,14 +218,12 @@ class _EmotionCard extends StatelessWidget {
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 22),
         decoration: BoxDecoration(
-          gradient: selected
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: gradient,
-                )
-              : null,
-          color: selected ? null : ws.surface,
+          // gradient 항상 제공 → AnimatedContainer가 색상 보간 가능
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: selected ? gradient : [ws.surface, ws.surface],
+          ),
           borderRadius: BorderRadius.circular(AppTokens.radiusCard),
           border: Border.all(
             color: selected
@@ -297,19 +293,16 @@ class _IntensityStar extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         height: 56,
         decoration: BoxDecoration(
-          gradient: filled
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: gradient,
-                )
-              : null,
-          color: filled ? null : ws.surface,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: filled ? gradient : [ws.surface, ws.surface],
+          ),
           borderRadius: BorderRadius.circular(AppTokens.radiusButton),
           border: Border.all(
             color: filled
                 ? Colors.white.withValues(alpha: 0.30)
-                : ws.surfaceBorder,
+                : ws.muted.withValues(alpha: 0.28),
             width: 1.2,
           ),
         ),
@@ -319,7 +312,7 @@ class _IntensityStar extends StatelessWidget {
             width: 22,
             height: 22,
             colorFilter: ColorFilter.mode(
-              filled ? Colors.white : AppOverlays.w33,
+              filled ? Colors.white : ws.muted.withValues(alpha: 0.55),
               BlendMode.srcIn,
             ),
           ),

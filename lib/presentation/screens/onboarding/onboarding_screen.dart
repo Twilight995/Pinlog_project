@@ -138,9 +138,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   Future<void> _pickAvatar() async {
     HapticFeedback.lightImpact();
     final picker = ImagePicker();
-    final source = await _showImageSourceSheet();
-    if (source == null) return;
+    final result = await _showImageSourceSheet();
+    if (result == null) return;
 
+    // 소셜 프로필 사진 사용
+    if (result == 'social') {
+      setState(() {
+        _avatarFile = null;
+        _uploadedAvatarUrl = widget.initialAvatarUrl;
+      });
+      return;
+    }
+
+    final source = result as ImageSource;
     final file = await picker.pickImage(source: source, imageQuality: 80);
     if (file == null) return;
 
@@ -172,8 +182,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     }
   }
 
-  Future<ImageSource?> _showImageSourceSheet() async {
-    return showModalBottomSheet<ImageSource>(
+  Future<Object?> _showImageSourceSheet() async {
+    final socialUrl = widget.initialAvatarUrl;
+    return showModalBottomSheet<Object>(
       context: context,
       backgroundColor: const Color(0xFF1A1232),
       shape: const RoundedRectangleBorder(
@@ -193,6 +204,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
               ),
             ),
             const SizedBox(height: 20),
+            if (socialUrl != null)
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundImage: NetworkImage(socialUrl),
+                  radius: 14,
+                ),
+                title: const Text('소셜 프로필 사진 사용',
+                    style: TextStyle(color: Colors.white, fontFamily: 'Pretendard')),
+                onTap: () => Navigator.pop(context, 'social'),
+              ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined,
                   color: Color(0xFF8B5CF6)),

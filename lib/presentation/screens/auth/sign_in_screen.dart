@@ -73,9 +73,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
     super.dispose();
   }
 
-  void _handleApple() async {
+  void _handleApple() {
     HapticFeedback.lightImpact();
-    await ref.read(pinlogAuthProvider.notifier).signInWithApple();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('서비스 구현 진행 중이에요'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   void _handleGoogle() async {

@@ -23,7 +23,7 @@
 
 ---
 
-### [ ] `screen01_map.mp4`
+### [X] `screen01_map.mp4`
 **슬라이드**: Screen 01 — Map  
 **길이**: 7초  
 **내용**:
@@ -34,7 +34,7 @@
 
 ---
 
-### [ ] `screen02_dark.mp4`
+### [X] `screen02_dark.mp4`
 **슬라이드**: Screen 02 — Dark Mode  
 **길이**: 6초  
 **내용**:
@@ -44,7 +44,7 @@
 
 ---
 
-### [ ] `screen03_create.mp4`
+### [X] `screen03_create.mp4`
 **슬라이드**: Screen 03 — Pin Create  
 **길이**: 8초  
 **내용**:
@@ -56,7 +56,7 @@
 
 ---
 
-### [ ] `screen04_detail.mp4`
+### [X] `screen04_detail.mp4`
 **슬라이드**: Screen 04 — Pin Detail  
 **길이**: 7초  
 **내용**:
@@ -67,7 +67,7 @@
 
 ---
 
-### [ ] `screen05_activity.mp4`
+### [X] `screen05_activity.mp4`
 **슬라이드**: Screen 05 — Activity  
 **길이**: 7초  
 **내용**:
@@ -78,7 +78,7 @@
 
 ---
 
-### [ ] `screen06_collection.mp4`
+### [X] `screen06_collection.mp4`
 **슬라이드**: Screen 06 — Collection  
 **길이**: 6초  
 **내용**:
@@ -89,7 +89,7 @@
 
 ---
 
-### [ ] `screen07_social.mp4`
+### [X] `screen07_social.mp4`
 **슬라이드**: Screen 07 — Social  
 **길이**: 6초  
 **내용**:
@@ -99,7 +99,7 @@
 
 ---
 
-### [ ] `screen08_meeting.mp4`
+### [x] `screen08_meeting.mp4`
 **슬라이드**: Screen 08 — Meeting  
 **길이**: 7초  
 **내용**:
