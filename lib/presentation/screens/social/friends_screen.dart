@@ -17,7 +17,12 @@ class FriendsScreen extends ConsumerWidget {
     final firestoreFriends = ref.watch(friendsStreamProvider);
     final localFriends = ref.watch(friendsProvider);
     final supaFriends = firestoreFriends.valueOrNull;
-    final friends = (supaFriends != null && supaFriends.isNotEmpty) ? supaFriends : localFriends;
+    // 친밀도는 로컬 Hive에만 저장 — Supabase 친구 목록에 병합
+    final localIntimacyMap = {for (final f in localFriends) f.code: f.intimacyLevel};
+    final mergedFriends = supaFriends?.map(
+      (f) => f.copyWith(intimacyLevel: localIntimacyMap[f.code] ?? 1),
+    ).toList();
+    final friends = (mergedFriends != null && mergedFriends.isNotEmpty) ? mergedFriends : localFriends;
     final myCode = ref.watch(myFriendCodeProvider);
     final pendingRequests = ref.watch(pendingRequestsProvider).valueOrNull ?? [];
     final topPad = MediaQuery.of(context).padding.top;
@@ -130,9 +135,6 @@ class FriendsScreen extends ConsumerWidget {
                     ),
                   ),
                   const Spacer(),
-                  // 데모 친구 토글 버튼
-                  _DemoFriendsButton(friends: friends),
-                  const SizedBox(width: 8),
                   GestureDetector(
                     onTap: () => _showAddFriendSheet(context),
                     child: Container(
@@ -188,13 +190,14 @@ class FriendsScreen extends ConsumerWidget {
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (ctx, i) => _FriendCard(
                   friend: friends[i],
-                  onRemove: () {
+                  onRemove: () async {
                     final f = friends[i];
-                    ref.read(friendsProvider.notifier).removeFriend(f.code);
+                    await ref.read(friendsProvider.notifier).removeFriend(f.code);
                     final uid = f.supabaseUid;
                     if (uid != null && uid.isNotEmpty) {
-                      ref.read(socialServiceProvider).removeFriend(uid);
+                      await ref.read(socialServiceProvider).removeFriend(uid);
                     }
+                    ref.invalidate(friendsStreamProvider);
                   },
                 ),
               ),
@@ -222,14 +225,17 @@ class FriendsScreen extends ConsumerWidget {
       req.id, req.fromUid, req.fromNickname, req.fromFriendCode,
     );
     if (!context.mounted) return;
+    // 성공 시에만 로컬 Hive에 추가
     if (err == null) {
-      // 로컬 Hive에도 즉시 반영 (스트림 업데이트 전까지 UI 일관성)
       await ref.read(friendsProvider.notifier).addFriend(
         req.fromFriendCode, req.fromNickname, uid: req.fromUid, notify: false,
       );
-      // Supabase 스트림 강제 재조회 — supaFriends가 이미 있을 때도 새 친구 즉시 반영
-      ref.invalidate(friendsStreamProvider);
-      if (!context.mounted) return;
+    }
+    // 항상 두 스트림 재조회 — 성공/실패 무관하게 신청 목록 즉시 제거
+    ref.invalidate(pendingRequestsProvider);
+    ref.invalidate(friendsStreamProvider);
+    if (!context.mounted) return;
+    if (err == null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('${req.fromNickname} 님의 신청을 수락했어요'),
         behavior: SnackBarBehavior.floating,
@@ -238,20 +244,12 @@ class FriendsScreen extends ConsumerWidget {
         backgroundColor: const Color(0xFF10B981),
         duration: const Duration(seconds: 2),
       ));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(err),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        backgroundColor: AppColors.danger,
-        duration: const Duration(seconds: 2),
-      ));
     }
   }
 
   Future<void> _rejectRequest(FriendRequest req, WidgetRef ref) async {
     await ref.read(socialServiceProvider).rejectFriendRequest(req.id);
+    ref.invalidate(pendingRequestsProvider);
   }
 }
 
@@ -529,7 +527,7 @@ Color _intimacyColor(int level) {
 
 class _FriendCard extends ConsumerWidget {
   final Friend friend;
-  final VoidCallback onRemove;
+  final Future<void> Function() onRemove;
 
   const _FriendCard({required this.friend, required this.onRemove});
 
@@ -1255,66 +1253,6 @@ class _PendingRequestCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─── 데모 친구 토글 버튼 ──────────────────────────────────────────────────────
-
-class _DemoFriendsButton extends ConsumerWidget {
-  final List<Friend> friends;
-  const _DemoFriendsButton({required this.friends});
-
-  bool get _hasDemoFriends =>
-      friends.any((f) => f.supabaseUid?.startsWith('demo_') == true);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final active = _hasDemoFriends;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        if (active) {
-          ref.read(friendsProvider.notifier).clearDemoFriends();
-        } else {
-          ref.read(friendsProvider.notifier).addDemoFriends();
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: active
-              ? const Color(0xFF10B981).withValues(alpha: 0.14)
-              : context.cardBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: active
-                ? const Color(0xFF10B981).withValues(alpha: 0.55)
-                : context.glassBorder,
-            width: active ? 1.5 : 1.0,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              active ? Icons.group_rounded : Icons.group_add_outlined,
-              size: 13,
-              color: active ? const Color(0xFF10B981) : context.subLabelColor,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              active ? '데모 ON' : '데모',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: active ? const Color(0xFF10B981) : context.subLabelColor,
-                fontFamily: AppTokens.fontBody,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

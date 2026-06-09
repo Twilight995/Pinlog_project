@@ -26,7 +26,6 @@ environment:
 
 
 
-
 dependencies:
   flutter:
     sdk: flutter
@@ -88,6 +87,8 @@ dependencies:
 
   
   kakao_flutter_sdk_user: ^1.9.7
+
+  google_generative_ai: ^0.4.6
 
 dev_dependencies:
   flutter_test:

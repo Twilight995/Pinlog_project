@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 
 import '../../../core/theme/app_theme.dart';
 
@@ -24,75 +23,72 @@ class GlassSheet extends StatelessWidget {
     final size = MediaQuery.of(context).size;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
-    final card = ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: centered
-                ? size.height * 0.65
-                : (height ?? size.height * 0.72),
+    final card = Container(
+      constraints: BoxConstraints(
+        maxHeight: centered
+            ? size.height * 0.65
+            : (height ?? size.height * 0.72),
+      ),
+      decoration: BoxDecoration(
+        color: context.sheetBg,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: context.glassBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 40,
+            offset: const Offset(0, 10),
           ),
-          decoration: BoxDecoration(
-            color: context.sheetBg,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: context.glassBorder),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 40,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!centered)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Container(
-                      width: 40,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: context.handleColor,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: Material(
+          type: MaterialType.transparency,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!centered)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: context.handleColor,
+                      borderRadius: BorderRadius.circular(3),
                     ),
-                  ),
-                if (onClose != null)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      top: centered ? 14 : 0,
-                      right: 15,
-                    ),
-                    child: Align(
-                      alignment: Alignment.topRight,
-                      child: GestureDetector(
-                        onTap: onClose,
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: context.emptyStateBg,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.close, size: 16, color: AppColors.greyLight),
-                        ),
-                      ),
-                    ),
-                  ),
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                    child: child,
                   ),
                 ),
-              ],
-            ),
+              if (onClose != null)
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: centered ? 14 : 0,
+                    right: 15,
+                  ),
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: GestureDetector(
+                      onTap: onClose,
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: context.emptyStateBg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, size: 16, color: AppColors.greyLight),
+                      ),
+                    ),
+                  ),
+                ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  child: child,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -112,10 +108,8 @@ class GlassSheet extends StatelessWidget {
       );
     }
 
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: bottomInset + 72,
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomInset + 16),
       child: card,
     );
   }

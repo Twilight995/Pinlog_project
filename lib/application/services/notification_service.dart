@@ -38,8 +38,13 @@ class NotificationService {
   Future<void> showRecapNotification({
     required String pinTitle,
     required int yearsAgo,
+    List<String> companions = const [],
   }) async {
     if (!_initialized) return;
+
+    final title = '$yearsAgo년 전 오늘의 추억';
+    final body = _buildBody(pinTitle: pinTitle, yearsAgo: yearsAgo, companions: companions);
+
     const details = NotificationDetails(
       iOS: DarwinNotificationDetails(
         presentAlert: true,
@@ -56,14 +61,23 @@ class NotificationService {
       ),
     );
     try {
-      await _plugin.show(
-        1001,
-        '📍 $yearsAgo년 전 오늘의 추억',
-        pinTitle.isEmpty ? '기록된 장소가 있어요' : '$pinTitle에 방문했어요',
-        details,
-      );
+      await _plugin.show(1001, title, body, details);
     } catch (e) {
       debugPrint('[Notification] show error: $e');
     }
+  }
+
+  String _buildBody({
+    required String pinTitle,
+    required int yearsAgo,
+    required List<String> companions,
+  }) {
+    final place = pinTitle.isEmpty ? '기록된 장소' : pinTitle;
+    if (companions.isEmpty) {
+      return '$yearsAgo년 전 오늘 $place을 방문했어요';
+    }
+    final name = companions.first;
+    final extra = companions.length > 1 ? ' 외 ${companions.length - 1}명' : '';
+    return '$yearsAgo년 전 $name$extra님과 함께한 $place의 추억이 있어요';
   }
 }

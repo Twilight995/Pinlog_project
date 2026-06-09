@@ -335,7 +335,10 @@ class WizardFooter extends StatelessWidget {
       children: [
         if (hasSkip) ...[
           GestureDetector(
-            onTap: onSkip,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              onSkip!();
+            },
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
               height: 56,

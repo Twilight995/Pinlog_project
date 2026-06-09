@@ -2688,14 +2688,10 @@ class _MapControls extends StatelessWidget {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: notifCount > 0
-                              ? context.primaryColor.withValues(alpha: 0.15)
-                              : context.glassBtnBg,
+                          color: context.glassBtnBg,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: notifCount > 0
-                                ? context.primaryColor.withValues(alpha: 0.40)
-                                : context.glassBorder,
+                            color: context.glassBorder,
                           ),
                           boxShadow: [
                             BoxShadow(

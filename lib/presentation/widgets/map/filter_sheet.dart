@@ -17,7 +17,6 @@ class FilterSheet extends ConsumerWidget {
     final filter = ref.watch(filterProvider);
 
     return GlassSheet(
-      onClose: onClose,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -26,6 +25,19 @@ class FilterSheet extends ConsumerWidget {
               Icon(Icons.tune, color: context.primaryColor, size: 20),
               const SizedBox(width: 8),
               const Text('핀 필터', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              const Spacer(),
+              GestureDetector(
+                onTap: onClose,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: context.emptyStateBg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, size: 16, color: AppColors.greyLight),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
@@ -113,6 +125,7 @@ class FilterSheet extends ConsumerWidget {
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: [
               _FilterChip(label: '전체 보기', isActive: filter.visibility == 'all', onTap: () => ref.read(filterProvider.notifier).setVisibility('all')),
               ...AppConstants.visibilities.map((v) => _FilterChip(

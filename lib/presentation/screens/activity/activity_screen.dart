@@ -36,6 +36,19 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       (_sc.hasClients ? _sc.offset : 0.0).clamp(0.0, _collapseRange) /
       _collapseRange;
 
+  void _jumpToDay(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = today.difference(date).inDays;
+    if (diff < 0 || diff >= _dayCount) return;
+    final idx = _dayCount - 1 - diff;
+    _pageCtrl.animateToPage(
+      idx,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   void _openPinDetail(String pinId) {
     showGeneralDialog<void>(
       context: context,
@@ -409,7 +422,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                child: _ActivityHeatmap(pins: pins),
+                child: _ActivityHeatmap(pins: pins, onDayTap: _jumpToDay),
               ),
             ),
 
@@ -707,7 +720,8 @@ class _PastelStatCard extends StatelessWidget {
 
 class _ActivityHeatmap extends StatefulWidget {
   final List<PinModel> pins;
-  const _ActivityHeatmap({required this.pins});
+  final void Function(DateTime)? onDayTap;
+  const _ActivityHeatmap({required this.pins, this.onDayTap});
 
   @override
   State<_ActivityHeatmap> createState() => _ActivityHeatmapState();
@@ -800,35 +814,43 @@ class _ActivityHeatmapState extends State<_ActivityHeatmap> {
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: AspectRatio(
                   aspectRatio: 1,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: cellColor,
-                      borderRadius: BorderRadius.circular(6),
-                      border: isToday
-                          ? Border.all(
-                              color: context.isDark
-                                  ? Colors.white
-                                  : context.primaryColor,
-                              width: 1.5,
+                  child: GestureDetector(
+                    onTap: (valid && count > 0 && widget.onDayTap != null)
+                        ? () {
+                            HapticFeedback.selectionClick();
+                            widget.onDayTap!(cellDate!);
+                          }
+                        : null,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: cellColor,
+                        borderRadius: BorderRadius.circular(6),
+                        border: isToday
+                            ? Border.all(
+                                color: context.isDark
+                                    ? Colors.white
+                                    : context.primaryColor,
+                                width: 1.5,
+                              )
+                            : null,
+                      ),
+                      child: valid
+                          ? Center(
+                              child: Text(
+                                '$day',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: count > 0 ? FontWeight.w700 : FontWeight.w400,
+                                  color: isToday && count == 0
+                                      ? (context.isDark
+                                          ? Colors.white
+                                          : context.primaryColor)
+                                      : textColor,
+                                ),
+                              ),
                             )
                           : null,
                     ),
-                    child: valid
-                        ? Center(
-                            child: Text(
-                              '$day',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: count > 0 ? FontWeight.w700 : FontWeight.w400,
-                                color: isToday && count == 0
-                                    ? (context.isDark
-                                        ? Colors.white
-                                        : context.primaryColor)
-                                    : textColor,
-                              ),
-                            ),
-                          )
-                        : null,
                   ),
                 ),
               ),

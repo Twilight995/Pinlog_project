@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../application/providers/friends_provider.dart';
+import '../../../../application/services/weather_service.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../wizard_scaffold.dart';
@@ -50,12 +51,34 @@ class _StepCompanionsState extends ConsumerState<StepCompanions> {
     [Color(0xFFBFDBFE), Color(0xFF93C5FD)],
   ];
 
+  bool _weatherLoading = false;
+  bool _weatherAutoDetected = false;
+
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController();
     _focus = FocusNode();
     _ctrl.addListener(() => setState(() => _inputText = _ctrl.text.trim()));
+    _autoDetectWeather();
+  }
+
+  Future<void> _autoDetectWeather() async {
+    final isDefault = widget.data.weather == AppConstants.weathers.first;
+    if (!isDefault) return;
+
+    setState(() => _weatherLoading = true);
+    final detected = await WeatherService.instance.fetchWeather(
+      widget.data.location.latitude,
+      widget.data.location.longitude,
+    );
+    if (!mounted) return;
+    if (detected != null) {
+      widget.data.weather = detected;
+      widget.onChange();
+      setState(() => _weatherAutoDetected = true);
+    }
+    setState(() => _weatherLoading = false);
   }
 
   @override
@@ -136,7 +159,7 @@ class _StepCompanionsState extends ConsumerState<StepCompanions> {
     HapticFeedback.selectionClick();
     widget.data.weather = w;
     widget.onChange();
-    setState(() {});
+    setState(() => _weatherAutoDetected = false);
   }
 
   List<Friend> _getSuggestions(List<Friend> friends) {
@@ -184,26 +207,95 @@ class _StepCompanionsState extends ConsumerState<StepCompanions> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '오늘의 날씨',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: context.ws.muted,
-                    letterSpacing: 0.3,
-                    fontFamily: AppTokens.fontBody,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '오늘의 날씨',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: context.ws.muted,
+                        letterSpacing: 0.3,
+                        fontFamily: AppTokens.fontBody,
+                      ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0.3, 0),
+                            end: Offset.zero,
+                          ).animate(anim),
+                          child: child,
+                        ),
+                      ),
+                      child: _weatherAutoDetected
+                          ? Padding(
+                              key: const ValueKey('badge'),
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFF4285F4),
+                                      Color(0xFF9B51E0),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.auto_awesome_rounded,
+                                      size: 9,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '자동 감지됨',
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('empty')),
+                    ),
+                  ],
                 ),
-                Text(
-                  _WeatherMeta.captionFor(widget.data.weather),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color:
-                        _WeatherMeta.metaFor(widget.data.weather).gradient.last,
-                    fontFamily: AppTokens.fontBody,
-                  ),
-                ),
+                _weatherLoading
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.8,
+                          color: context.primaryColor,
+                        ),
+                      )
+                    : Text(
+                        _WeatherMeta.captionFor(widget.data.weather),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _WeatherMeta
+                              .metaFor(widget.data.weather)
+                              .gradient
+                              .last,
+                          fontFamily: AppTokens.fontBody,
+                        ),
+                      ),
               ],
             ),
             const SizedBox(height: 12),

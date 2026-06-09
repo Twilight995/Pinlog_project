@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -153,17 +154,22 @@ class SocialService {
       'from_friend_code': myCode,
     });
 
-    // FCM 알림 전송 (실패해도 무방)
+    // FCM 알림 전송
     final displayName = myNickname.isNotEmpty ? myNickname : '누군가';
-    _db.functions.invoke(
-      'send-fcm',
-      body: {
-        'target_uid': targetUid,
-        'title': '친구 신청이 왔어요',
-        'body': '$displayName 님이 친구 신청을 보냈어요',
-        'data': {'type': 'friend_request'},
-      },
-    ).ignore();
+    try {
+      final res = await _db.functions.invoke(
+        'send-fcm',
+        body: {
+          'target_uid': targetUid,
+          'title': '친구 신청이 왔어요',
+          'body': '$displayName 님이 친구 신청을 보냈어요',
+          'data': {'type': 'friend_request'},
+        },
+      );
+      debugPrint('[FCM] friend_request → status=${res.status} data=${res.data}');
+    } catch (e) {
+      debugPrint('[FCM] friend_request error: $e');
+    }
 
     return null;
   }
@@ -190,15 +196,20 @@ class SocialService {
           .eq('uid', _uid ?? '')
           .maybeSingle();
       final myName = myData?['nickname'] as String? ?? '누군가';
-      _db.functions.invoke(
-        'send-fcm',
-        body: {
-          'target_uid': fromUid,
-          'title': '친구 신청이 수락됐어요',
-          'body': '$myName 님이 친구 신청을 수락했어요',
-          'data': {'type': 'friend_accepted'},
-        },
-      ).ignore();
+      try {
+        final res = await _db.functions.invoke(
+          'send-fcm',
+          body: {
+            'target_uid': fromUid,
+            'title': '친구 신청이 수락됐어요',
+            'body': '$myName 님이 친구 신청을 수락했어요',
+            'data': {'type': 'friend_accepted'},
+          },
+        );
+        debugPrint('[FCM] friend_accepted → status=${res.status} data=${res.data}');
+      } catch (e) {
+        debugPrint('[FCM] friend_accepted error: $e');
+      }
 
       return null;
     } catch (_) {

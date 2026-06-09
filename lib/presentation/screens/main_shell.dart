@@ -38,14 +38,13 @@ class _MainShellState extends ConsumerState<MainShell> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkRecap();
       // MainShell 마운트 시점에 이미 로그인 상태이면 서버에서 핀 재로드
-      // (logout → login 계정 전환 시 signedIn 이벤트를 리스너가 놓치는 케이스 방어)
       final uid = Supabase.instance.client.auth.currentUser?.id;
       if (uid != null) {
         ref.read(pinsProvider.notifier).clearState();
         ref.read(pinsProvider.notifier).loadFromServer();
       }
+      _checkRecap();
     });
   }
 
@@ -78,6 +77,7 @@ class _MainShellState extends ConsumerState<MainShell> {
     await NotificationService.instance.showRecapNotification(
       pinTitle: first.pin.title,
       yearsAgo: first.yearsAgo,
+      companions: first.pin.companions,
     );
     if (!mounted) return;
     await RecapPopup.show(context, memories);
@@ -471,6 +471,7 @@ class _NavItemState extends State<_NavItem>
   void _onTapDown(_) => _pressCtrl.forward();
   void _onTapUp(_) {
     _pressCtrl.reverse();
+    HapticFeedback.lightImpact();
     widget.onTap();
   }
 
@@ -589,7 +590,10 @@ class _CreateButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        onTap();
+      },
       child: Container(
           width: 56,
           height: 56,

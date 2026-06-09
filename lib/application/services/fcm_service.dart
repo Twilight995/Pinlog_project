@@ -122,6 +122,15 @@ class FCMService {
     _showInAppBanner(title: title ?? '', body: body ?? '', data: message.data);
   }
 
+  // TEMP: 스크린샷용 테스트 배너
+  void showTestBanner() {
+    _showInAppBanner(
+      title: '친구 요청',
+      body: '테스트가 친구 요청을 보냈습니다.',
+      data: {},
+    );
+  }
+
   void _showInAppBanner({
     required String title,
     required String body,
